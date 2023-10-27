@@ -33,7 +33,7 @@ func (t Tracks) GetRange(from, to int) []Track {
 }
 
 func (t Track) String() string {
-	return "  →  " + t.Name + " --> " + t.Command
+	return " ▸ " + t.Name + " ➡ " + t.Command
 }
 
 func getTracks(ctx context.Context) (Tracks, error) {

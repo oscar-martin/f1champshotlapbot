@@ -22,15 +22,23 @@ import (
 
 const (
 	menuTracks             = "/circuitos"
+	inlineKeyboardTimes    = "Tiempos"
 	inlineKeyboardSectors  = "Sectores"
-	inlineKeyboardCompound = "Compuesto"
+	inlineKeyboardCompound = "Gomas"
 	inlineKeyboardLaps     = "Vueltas"
-	inlineKeyboardTeam     = "Equipo"
-	inlineKeyboardDriver   = "Piloto"
+	inlineKeyboardTeam     = "Coches"
+	inlineKeyboardDriver   = "Pilotos"
 	inlineKeyboardDate     = "Fecha"
 
+	symbolTimes    = "⏱"
+	symbolSectors  = "🔂"
+	symbolCompound = "🛞"
+	symbolLaps     = "🏁"
+	symbolTeam     = "🏎️"
+	symbolDriver   = "👐"
+	symbolDate     = "⌚️"
+
 	tableDriver = "PIL"
-	tableTime   = "Tiempo"
 )
 
 var (
@@ -141,7 +149,8 @@ func CallbackQueryHandler(query *tgbotapi.CallbackQuery) {
 		maxPages := len(tracks) / tracksPerPage
 		HandleNavigationCallbackQuery(query.Message.Chat.ID, query.Message.MessageID, maxPages, tracks, split[1:]...)
 		return
-	} else if split[0] == inlineKeyboardSectors ||
+	} else if split[0] == inlineKeyboardTimes ||
+		split[0] == inlineKeyboardSectors ||
 		split[0] == inlineKeyboardCompound ||
 		split[0] == inlineKeyboardLaps ||
 		split[0] == inlineKeyboardTeam ||
@@ -178,12 +187,16 @@ func CallbackQueryHandler(query *tgbotapi.CallbackQuery) {
 				t.SetStyle(table.StyleRounded)
 				t.AppendSeparator()
 
-				t.AppendHeader(table.Row{tableDriver, tableTime, split[0]})
+				t.AppendHeader(table.Row{tableDriver, split[0]})
 				for _, session := range sessionsForCategory {
-					if split[0] == inlineKeyboardSectors {
+					if split[0] == inlineKeyboardTimes {
 						t.AppendRow([]interface{}{
 							getDriverCodeName(session.Driver),
 							secondsToMinutes(session.Time),
+						})
+					} else if split[0] == inlineKeyboardSectors {
+						t.AppendRow([]interface{}{
+							getDriverCodeName(session.Driver),
 							fmt.Sprintf("%s %s %s", toSectorTime(session.S1), toSectorTime(session.S2), toSectorTime(session.S3)),
 						})
 					} else if split[0] == inlineKeyboardCompound {
@@ -194,31 +207,26 @@ func CallbackQueryHandler(query *tgbotapi.CallbackQuery) {
 						}
 						t.AppendRow([]interface{}{
 							getDriverCodeName(session.Driver),
-							secondsToMinutes(session.Time),
 							tyre,
 						})
 					} else if split[0] == inlineKeyboardLaps {
 						t.AppendRow([]interface{}{
 							getDriverCodeName(session.Driver),
-							secondsToMinutes(session.Time),
 							fmt.Sprintf("%d/%d", session.Lapcountcomplete, session.Lapcount),
 						})
 					} else if split[0] == inlineKeyboardTeam {
 						t.AppendRow([]interface{}{
 							getDriverCodeName(session.Driver),
-							secondsToMinutes(session.Time),
-							session.Team,
+							session.CarClass,
 						})
 					} else if split[0] == inlineKeyboardDriver {
 						t.AppendRow([]interface{}{
 							getDriverCodeName(session.Driver),
-							secondsToMinutes(session.Time),
 							session.Driver,
 						})
 					} else if split[0] == inlineKeyboardDate {
 						t.AppendRow([]interface{}{
 							getDriverCodeName(session.Driver),
-							secondsToMinutes(session.Time),
 							session.DateTime,
 						})
 					}
@@ -244,16 +252,19 @@ func CallbackQueryHandler(query *tgbotapi.CallbackQuery) {
 func getInlineKeyboardForCategory(trackId, categoryId string) tgbotapi.InlineKeyboardMarkup {
 	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardSectors, fmt.Sprintf("%s:%s:%s", inlineKeyboardSectors, trackId, categoryId)),
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardCompound, fmt.Sprintf("%s:%s:%s", inlineKeyboardCompound, trackId, categoryId)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardTimes+" "+symbolTimes, fmt.Sprintf("%s:%s:%s", inlineKeyboardTimes, trackId, categoryId)),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardLaps, fmt.Sprintf("%s:%s:%s", inlineKeyboardLaps, trackId, categoryId)),
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardTeam, fmt.Sprintf("%s:%s:%s", inlineKeyboardTeam, trackId, categoryId)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardSectors+" "+symbolSectors, fmt.Sprintf("%s:%s:%s", inlineKeyboardSectors, trackId, categoryId)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardCompound+" "+symbolTimes, fmt.Sprintf("%s:%s:%s", inlineKeyboardCompound, trackId, categoryId)),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardDriver, fmt.Sprintf("%s:%s:%s", inlineKeyboardDriver, trackId, categoryId)),
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardDate, fmt.Sprintf("%s:%s:%s", inlineKeyboardDate, trackId, categoryId)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardLaps+" "+symbolLaps, fmt.Sprintf("%s:%s:%s", inlineKeyboardLaps, trackId, categoryId)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardTeam+" "+symbolTeam, fmt.Sprintf("%s:%s:%s", inlineKeyboardTeam, trackId, categoryId)),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardDriver+" "+symbolDriver, fmt.Sprintf("%s:%s:%s", inlineKeyboardDriver, trackId, categoryId)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardDate+" "+symbolDate, fmt.Sprintf("%s:%s:%s", inlineKeyboardDate, trackId, categoryId)),
 		),
 	)
 }
@@ -347,12 +358,11 @@ func handleCommand(ctx context.Context, chatId int64, command string) error {
 				t.SetOutputMirror(&b)
 				t.SetStyle(table.StyleRounded)
 				t.AppendSeparator()
-				t.AppendHeader(table.Row{tableDriver, tableTime, inlineKeyboardSectors})
+				t.AppendHeader(table.Row{tableDriver, inlineKeyboardTimes})
 				for _, session := range sessionsForCategory {
 					t.AppendRow([]interface{}{
 						getDriverCodeName(session.Driver),
 						secondsToMinutes(session.Time),
-						fmt.Sprintf("%s %s %s", toSectorTime(session.S1), toSectorTime(session.S2), toSectorTime(session.S3)),
 					})
 				}
 				t.Render()
@@ -400,11 +410,11 @@ func processCurrentTrackTimes(ctx context.Context, chatId int64, track Track) er
 
 	cats := sessions.GetCategories()
 
-	message := fmt.Sprintf("Sesiones para %s:\n\n", track.Name)
+	message := fmt.Sprintf("Elige categoría para %s:\n\n", track.Name)
 	if len(cats) > 0 {
 		categoriesStrings := make([]string, len(cats))
 		for i, cat := range cats {
-			categoriesStrings[i] = "  →  " + cat.Name + fmt.Sprintf(" ---> /%s_%s", track.ID, cat.ID)
+			categoriesStrings[i] = " ▸ " + cat.Name + fmt.Sprintf(" ➡ /%s_%s", track.ID, cat.ID)
 		}
 
 		message += strings.Join(categoriesStrings, "\n")

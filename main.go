@@ -4,12 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
-	"net/url"
 	"os"
 	"sort"
 	"strconv"
@@ -23,8 +19,7 @@ import (
 )
 
 const (
-	menuTracks       = "/tracks"
-	menuCurrentTrack = "/current_track"
+	menuTracks = "/tracks"
 )
 
 // struct to process the next json payload
@@ -51,69 +46,48 @@ const (
 //		"lapcount": 51,
 //		"lapcountcomplete": 16
 //	},
-type Session struct {
-	Driver           string  `json:"driver"`
-	TrackCourse      string  `json:"TrackCourse"`
-	S1               float64 `json:"s1"`
-	S2               float64 `json:"s2"`
-	S3               float64 `json:"s3"`
-	Time             float64 `json:"time"`
-	Fuel             float64 `json:"fuel"`
-	Fl               float64 `json:"fl"`
-	Fr               float64 `json:"fr"`
-	Rl               float64 `json:"rl"`
-	Rr               float64 `json:"rr"`
-	Fcompound        string  `json:"fcompound"`
-	Rcompound        string  `json:"rcompound"`
-	DateTime         string  `json:"DateTime"`
-	Category         string  `json:"category"`
-	CarType          string  `json:"carType"`
-	CarClass         string  `json:"carClass"`
-	Team             string  `json:"team"`
-	Lapcount         int     `json:"lapcount"`
-	Lapcountcomplete int     `json:"lapcountcomplete"`
-}
 
 var (
 	trackMutex      sync.Mutex
-	tracks          = []string{}
+	tracks          Tracks
 	trackSessionsMu sync.Mutex
-	trackSessions   = map[string][]Session{}
-	currentTrack    = ""
+	trackSessions   = map[string]Sessions{}
 	// Menu texts
-	firstMenu  = "<b>Menu 1</b>\n\nA beautiful menu with a shiny inline button."
-	secondMenu = "<b>Menu 2</b>\n\nA better menu with even more shiny inline buttons."
+	// firstMenu  = "<b>Menu 1</b>\n\nA beautiful menu with a shiny inline button."
+	// secondMenu = "<b>Menu 2</b>\n\nA better menu with even more shiny inline buttons."
 
 	// Button texts
-	nextButton     = "Next"
-	backButton     = "Back"
-	tutorialButton = "Tutorial"
+	// nextButton     = "Next"
+	// backButton     = "Back"
+	// tutorialButton = "Tutorial"
 
 	// Store bot screaming status
-	screaming = false
-	bot       *tgbotapi.BotAPI
+	// screaming = false
+	bot *tgbotapi.BotAPI
 
-	// Keyboard layout for the first menu. One button, one row
-	firstMenuMarkup = tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(nextButton, nextButton),
-		),
-	)
+	// // Keyboard layout for the first menu. One button, one row
+	// firstMenuMarkup = tgbotapi.NewInlineKeyboardMarkup(
+	// 	tgbotapi.NewInlineKeyboardRow(
+	// 		tgbotapi.NewInlineKeyboardButtonData(nextButton, nextButton),
+	// 	),
+	// )
 
-	// Keyboard layout for the second menu. Two buttons, one per row
-	secondMenuMarkup = tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(backButton, backButton),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonURL(tutorialButton, "https://core.telegram.org/bots/api"),
-		),
-	)
+	// // Keyboard layout for the second menu. Two buttons, one per row
+	// secondMenuMarkup = tgbotapi.NewInlineKeyboardMarkup(
+	// 	tgbotapi.NewInlineKeyboardRow(
+	// 		tgbotapi.NewInlineKeyboardButtonData(backButton, backButton),
+	// 	),
+	// 	tgbotapi.NewInlineKeyboardRow(
+	// 		tgbotapi.NewInlineKeyboardButtonURL(tutorialButton, "https://core.telegram.org/bots/api"),
+	// 	),
+	// )
 )
 
 func main() {
 	var err error
-	bot, err = tgbotapi.NewBotAPI("6361517001:AAGMS30BNTmLkBoc9OzhygaIl4yhuduXMzM")
+	// get token from env
+	token := os.Getenv("TELEGRAM_TOKEN")
+	bot, err = tgbotapi.NewBotAPI(token)
 	if err != nil {
 		// Abort if something is wrong
 		log.Panic(err)
@@ -139,9 +113,8 @@ func main() {
 	log.Println("Start listening for updates. Press enter to stop")
 
 	// Wait for a newline symbol, then cancel handling updates
-	bufio.NewReader(os.Stdin).ReadBytes('\n')
+	_, _ = bufio.NewReader(os.Stdin).ReadBytes('\n')
 	cancel()
-
 }
 
 func receiveUpdates(ctx context.Context, updates tgbotapi.UpdatesChannel) {
@@ -153,26 +126,23 @@ func receiveUpdates(ctx context.Context, updates tgbotapi.UpdatesChannel) {
 			return
 		// receive update from channel and then handle it
 		case update := <-updates:
-			handleUpdate(update)
+			handleUpdate(ctx, update)
 		}
 	}
 }
 
-func handleUpdate(update tgbotapi.Update) {
+func handleUpdate(ctx context.Context, update tgbotapi.Update) {
 	switch {
 	// Handle messages
 	case update.Message != nil:
-		handleMessage(update.Message)
-		break
-
+		handleMessage(ctx, update.Message)
 	// Handle button clicks
 	case update.CallbackQuery != nil:
-		handleButton(update.CallbackQuery)
-		break
+		handleButton(ctx, update.CallbackQuery)
 	}
 }
 
-func handleMessage(message *tgbotapi.Message) {
+func handleMessage(ctx context.Context, message *tgbotapi.Message) {
 	user := message.From
 	text := message.Text
 
@@ -184,52 +154,75 @@ func handleMessage(message *tgbotapi.Message) {
 	log.Printf("%s wrote %s", user.FirstName, text)
 
 	var err error
-	if strings.HasPrefix(text, "/") {
-		err = handleCommand(message.Chat.ID, text)
-	} else if screaming && len(text) > 0 {
-		msg := tgbotapi.NewMessage(message.Chat.ID, strings.ToUpper(text))
-		// To preserve markdown, we attach entities (bold, italic..)
-		msg.Entities = message.Entities
-		_, err = bot.Send(msg)
-	} else {
-		// This is equivalent to forwarding, without the sender's name
-		copyMsg := tgbotapi.NewCopyMessage(message.Chat.ID, message.Chat.ID, message.MessageID)
-		_, err = bot.CopyMessage(copyMsg)
+	if message.IsCommand() {
+		err = handleCommand(ctx, message.Chat.ID, text)
 	}
+
+	// if strings.HasPrefix(text, "/") {
+	// 	err = handleCommand(message.Chat.ID, text)
+	// } else if screaming && len(text) > 0 {
+	// 	msg := tgbotapi.NewMessage(message.Chat.ID, strings.ToUpper(text))
+	// 	// To preserve markdown, we attach entities (bold, italic..)
+	// 	msg.Entities = message.Entities
+	// 	_, err = bot.Send(msg)
+	// } else {
+	// 	// This is equivalent to forwarding, without the sender's name
+	// 	copyMsg := tgbotapi.NewCopyMessage(message.Chat.ID, message.Chat.ID, message.MessageID)
+	// 	_, err = bot.CopyMessage(copyMsg)
+	// }
 
 	if err != nil {
 		log.Printf("An error occured: %s", err.Error())
 	}
 }
 
+func handleButton(ctx context.Context, query *tgbotapi.CallbackQuery) {
+	var text string
+
+	markup := tgbotapi.NewInlineKeyboardMarkup()
+	message := query.Message
+
+	// if query.Data == nextButton {
+	// 	text = secondMenu
+	// 	markup = secondMenuMarkup
+	// } else if query.Data == backButton {
+	// 	text = firstMenu
+	// 	markup = firstMenuMarkup
+	// }
+
+	callbackCfg := tgbotapi.NewCallback(query.ID, "")
+	bot.Send(callbackCfg)
+
+	// Replace menu text and keyboard
+	msg := tgbotapi.NewEditMessageTextAndMarkup(message.Chat.ID, message.MessageID, text, markup)
+	msg.ParseMode = tgbotapi.ModeHTML
+	bot.Send(msg)
+}
+
 // When we get a command, we react accordingly
-func handleCommand(chatId int64, command string) error {
+func handleCommand(ctx context.Context, chatId int64, command string) error {
 	var err error
 
 	commandTrackId := regexp.MustCompile(`^\/(\d+)$`)
 	commandTrackSessionId := regexp.MustCompile(`^\/(\d+)_(.+)$`)
 	switch {
+
+	// Fetch all tracks
 	case command == menuTracks:
-		tracks, err = getTracks()
+		trackMutex.Lock()
+		defer trackMutex.Unlock()
+		tracks, err = getTracks(ctx)
 		if err != nil {
 			return err
 		}
 
 		var message string
 		if len(tracks) > 0 {
-			currentTrack = tracks[0]
-			// sort tracks by name
-			sort.Slice(tracks, func(i, j int) bool {
-				return tracks[i] < tracks[j]
-			})
-
-			// iterate over the tracks to append a suffix
 			tracksStrings := make([]string, len(tracks))
 			for i, track := range tracks {
-				tracksStrings[i] = track + " /" + fmt.Sprintf("%d", i)
+				tracksStrings[i] = track.Name + " --> " + track.Command
 			}
-
-			message = strings.Join(append(tracksStrings, fmt.Sprintf("%s ---> %s", currentTrack, menuCurrentTrack)), "\n")
+			message = strings.Join(tracksStrings, "\n")
 		} else {
 			message = "No hay circuitos disponibles"
 		}
@@ -239,9 +232,11 @@ func handleCommand(chatId int64, command string) error {
 			return err
 		}
 
+	// Fetch all sessions for a track
 	case commandTrackId.MatchString(command):
 		trackId, _ := strconv.Atoi(commandTrackId.FindStringSubmatch(command)[1])
-		if trackId >= len(tracks) {
+		track, found := tracks.GetTrackByID(fmt.Sprint(trackId))
+		if !found {
 			message := "No hay circuitos disponibles"
 			msg := tgbotapi.NewMessage(chatId, message)
 			_, err = bot.Send(msg)
@@ -249,29 +244,24 @@ func handleCommand(chatId int64, command string) error {
 				return err
 			}
 		}
-		return processCurrentTrackTimes(chatId, trackId, tracks[trackId])
+		return processCurrentTrackTimes(ctx, chatId, track)
 
 	case commandTrackSessionId.MatchString(command):
 		trackId, _ := strconv.Atoi(commandTrackSessionId.FindStringSubmatch(command)[1])
-		category := commandTrackSessionId.FindStringSubmatch(command)[2]
+		categoryId := commandTrackSessionId.FindStringSubmatch(command)[2]
 
-		if trackId >= len(tracks) {
-			message := "No hay circuitos disponibles"
+		track, found := tracks.GetTrackByID(fmt.Sprint(trackId))
+		if !found {
+			message := "No hay sesiones disponibles"
 			msg := tgbotapi.NewMessage(chatId, message)
 			_, err = bot.Send(msg)
 			if err != nil {
 				return err
 			}
+			return nil
 		}
-
-		track := tracks[trackId]
-		if sessions, ok := trackSessions[track]; ok {
-			sessionsForCategory := []Session{}
-			for _, session := range sessions {
-				if extractCategory(session.Category) == category {
-					sessionsForCategory = append(sessionsForCategory, session)
-				}
-			}
+		if sessions, ok := trackSessions[track.ID]; ok {
+			sessionsForCategory := sessions.GetSessionsByCategoryID(categoryId)
 
 			if len(sessionsForCategory) > 0 {
 				sort.Slice(sessionsForCategory, func(i, j int) bool {
@@ -281,19 +271,21 @@ func handleCommand(chatId int64, command string) error {
 				var b bytes.Buffer
 				t := table.NewWriter()
 				t.SetOutputMirror(&b)
+				t.SetStyle(table.StyleRounded)
 				t.AppendSeparator()
-				t.AppendHeader(table.Row{"Driver", "Times", "S1", "S2", "S3"})
+				// t.AppendHeader(table.Row{"Dri", "Times", "S1", "S2", "S3"})
+				t.AppendHeader(table.Row{"Dri", "Times", "Sectors"})
 				// var message string
 				for _, session := range sessionsForCategory {
-					t.AppendRow([]interface{}{session.Driver, secondsToMinutes(session.Time), session.S1, session.S2, session.S3})
-					// message += fmt.Sprintf("%s %s (%.3f, %.3f, %.3f)\n", session.Driver, secondsToMinutes(session.Time), session.S1, session.S2, session.S3)
+					t.AppendRow([]interface{}{
+						getDriverCodeName(session.Driver),
+						secondsToMinutes(session.Time),
+						fmt.Sprintf("%s %s %s", toSectorTime(session.S1), toSectorTime(session.S2), toSectorTime(session.S3)),
+						// toSectorTime(session.S1),
+						// toSectorTime(session.S2),
+						// toSectorTime(session.S3),
+					})
 				}
-
-				// t.AppendRows([]table.Row{
-				// 	{1, "Arya", "Stark", 3000},
-				// 	{20, "Jon", "Snow", 2000, "You know nothing, Jon Snow!"},
-				// })
-				// t.AppendFooter(table.Row{"", "", "Total", 10000})
 				t.Render()
 
 				msg := tgbotapi.NewMessage(chatId, fmt.Sprintf("```%s```", b.String()))
@@ -322,115 +314,83 @@ func handleCommand(chatId int64, command string) error {
 			}
 		}
 
-	case command == menuCurrentTrack:
-		if currentTrack == "" {
-			message := "No hay circuitos disponibles"
-			msg := tgbotapi.NewMessage(chatId, message)
-			_, err = bot.Send(msg)
-			if err != nil {
-				return err
-			}
-		}
+	// case command == menuCurrentTrack:
+	// 	if currentTrack == "" {
+	// 		message := "No hay circuitos disponibles"
+	// 		msg := tgbotapi.NewMessage(chatId, message)
+	// 		_, err = bot.Send(msg)
+	// 		if err != nil {
+	// 			return err
+	// 		}
+	// 	}
 
-		// find track index in tracks
-		for i, track := range tracks {
-			if track == currentTrack {
-				return processCurrentTrackTimes(chatId, i, currentTrack)
-			}
-		}
-		message := "No hay circuitos disponibles"
-		msg := tgbotapi.NewMessage(chatId, message)
-		_, err = bot.Send(msg)
-		if err != nil {
-			return err
-		}
+	// 	// find track index in tracks
+	// 	for i, track := range tracks {
+	// 		if track == currentTrack {
+	// 			return processCurrentTrackTimes(chatId, i, currentTrack)
+	// 		}
+	// 	}
+	// 	message := "No hay circuitos disponibles"
+	// 	msg := tgbotapi.NewMessage(chatId, message)
+	// 	_, err = bot.Send(msg)
+	// 	if err != nil {
+	// 		return err
+	// 	}
 
 	case command == "/whisper":
-		var b bytes.Buffer
-		t := table.NewWriter()
-		t.SetOutputMirror(&b)
-		t.AppendHeader(table.Row{"#", "First Name", "Last Name", "Salary"})
-		t.AppendRows([]table.Row{
-			{1, "Arya", "Stark", 3000},
-			{20, "Jon", "Snow", 2000, "You know nothing, Jon Snow!"},
-		})
-		t.AppendRow([]interface{}{300, "Tyrion", "Lannister", 5000})
-		t.AppendFooter(table.Row{"", "", "Total", 10000})
-		t.RenderMarkdown()
+		// var b bytes.Buffer
+		// t := table.NewWriter()
+		// t.SetOutputMirror(&b)
+		// t.AppendHeader(table.Row{"#", "First Name", "Last Name", "Salary"})
+		// t.AppendRows([]table.Row{
+		// 	{1, "Arya", "Stark", 3000},
+		// 	{20, "Jon", "Snow", 2000, "You know nothing, Jon Snow!"},
+		// })
+		// t.AppendRow([]interface{}{300, "Tyrion", "Lannister", 5000})
+		// t.AppendFooter(table.Row{"", "", "Total", 10000})
+		// t.RenderMarkdown()
 		// message := "```\n" +
 		// 	"| one   | two |" + "\n" +
 		// 	"| ----- | --- |" + "\n" +
 		// 	"| two   |   2 |" + "\n" +
 		// 	"| three |   3 |" + "\n" +
 		// 	"```"
-
-		msg := tgbotapi.NewMessage(chatId, fmt.Sprintf("```%s```", b.String()))
-		msg.ParseMode = tgbotapi.ModeMarkdownV2
-		_, err = bot.Send(msg)
-		if err != nil {
-			return err
-		}
+		// msg := tgbotapi.NewMessage(chatId, fmt.Sprintf("```%s```", b.String()))
+		// msg.ParseMode = tgbotapi.ModeMarkdownV2
+		// _, err = bot.Send(msg)
+		// if err != nil {
+		// 	return err
+		// }
 
 	case command == "/menu":
-		err = sendMenu(chatId)
+		// err = sendMenu(chatId)
 	}
 
 	return err
 }
 
-// method to convert from seconds to minutes:seconds:milliseconds
-func secondsToMinutes(seconds float64) string {
-	minutes := int(seconds / 60)
-	seconds = seconds - float64(minutes*60)
-	milliseconds := int((seconds - float64(int(seconds))) * 1000)
-	return fmt.Sprintf("%02d:%02d.%03d", minutes, int(seconds), milliseconds)
-}
-
-func extractCategory(category string) string {
-	if len(category) > 0 {
-		c := strings.ToLower(strings.Split(category, ",")[0])
-		return strings.ReplaceAll(c, " ", "_")
-	}
-	return ""
-}
-
-func processCurrentTrackTimes(chatId int64, trackId int, track string) error {
+func processCurrentTrackTimes(ctx context.Context, chatId int64, track Track) error {
 	trackSessionsMu.Lock()
 	defer trackSessionsMu.Unlock()
-	var sessions []Session
-	if trackSessions[track] == nil {
+	var sessions Sessions
+	if trackSessions[track.ID] == nil {
 		var err error
-		sessions, err = getTrackSessions(track)
+		sessions, err = GetSessions(ctx, track.Name)
 		if err != nil {
 			return err
 		}
-		trackSessions[track] = sessions
+		trackSessions[track.ID] = sessions
 	} else {
-		sessions = trackSessions[track]
+		sessions = trackSessions[track.ID]
 	}
 
-	categories := map[string]string{}
-	for _, session := range sessions {
-		if _, exits := categories[session.Category]; !exits {
-			c := extractCategory(session.Category)
-			if c != "" {
-				categories[c] = ""
-			}
-		}
-	}
-
-	cats := make([]string, 0, len(categories))
-
-	for k := range categories {
-		cats = append(cats, k)
-	}
-	sort.Strings(cats)
+	cats := sessions.GetCategories()
 
 	var message string
 	if len(cats) > 0 {
 		categoriesStrings := make([]string, len(cats))
 		for i, cat := range cats {
-			categoriesStrings[i] = cat + fmt.Sprintf(" ---> /%d_%s", trackId, cat)
+			categoriesStrings[i] = cat.Name + fmt.Sprintf(" ---> /%s_%s", track.ID, cat.ID)
 		}
 
 		message = strings.Join(categoriesStrings, "\n")
@@ -443,89 +403,10 @@ func processCurrentTrackTimes(chatId int64, trackId int, track string) error {
 	return err
 }
 
-func getTrackSessions(track string) ([]Session, error) {
-	// Make a get request
-	resp, err := http.Get("https://api.f1champs.es/v3/laps?track=" + url.QueryEscape(track))
-	if err != nil {
-		return nil, err
-	}
-
-	// Close the response body on function return
-	defer resp.Body.Close()
-
-	// Read the response body
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	// Unmarshal the response body into a TrackResponse struct
-	var trackSessions []Session
-	err = json.Unmarshal(body, &trackSessions)
-	if err != nil {
-		return nil, err
-	}
-
-	return trackSessions, nil
-}
-
-// getTracks gets all tracks from URL https://api.f1champs.es/v3/laps?tracklist=tracklist
-// using a http.get call
-func getTracks() ([]string, error) {
-	trackMutex.Lock()
-	defer trackMutex.Unlock()
-	// Make a get request
-	resp, err := http.Get("https://api.f1champs.es/v3/laps?tracklist=tracklist")
-	if err != nil {
-		return nil, err
-	}
-
-	// Close the response body on function return
-	defer resp.Body.Close()
-
-	// Read the response body
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	// Unmarshal the response body into a TrackResponse struct
-	var tracks []string
-	err = json.Unmarshal(body, &tracks)
-	if err != nil {
-		return nil, err
-	}
-
-	return tracks, nil
-}
-
-func handleButton(query *tgbotapi.CallbackQuery) {
-	var text string
-
-	markup := tgbotapi.NewInlineKeyboardMarkup()
-	message := query.Message
-
-	if query.Data == nextButton {
-		text = secondMenu
-		markup = secondMenuMarkup
-	} else if query.Data == backButton {
-		text = firstMenu
-		markup = firstMenuMarkup
-	}
-
-	callbackCfg := tgbotapi.NewCallback(query.ID, "")
-	bot.Send(callbackCfg)
-
-	// Replace menu text and keyboard
-	msg := tgbotapi.NewEditMessageTextAndMarkup(message.Chat.ID, message.MessageID, text, markup)
-	msg.ParseMode = tgbotapi.ModeHTML
-	bot.Send(msg)
-}
-
-func sendMenu(chatId int64) error {
-	msg := tgbotapi.NewMessage(chatId, firstMenu)
-	msg.ParseMode = tgbotapi.ModeHTML
-	msg.ReplyMarkup = firstMenuMarkup
-	_, err := bot.Send(msg)
-	return err
-}
+// func sendMenu(chatId int64) error {
+// 	msg := tgbotapi.NewMessage(chatId, firstMenu)
+// 	msg.ParseMode = tgbotapi.ModeHTML
+// 	msg.ReplyMarkup = firstMenuMarkup
+// 	_, err := bot.Send(msg)
+// 	return err
+// }

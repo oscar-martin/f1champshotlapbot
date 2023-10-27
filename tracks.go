@@ -28,12 +28,13 @@ func (t Tracks) GetTrackByID(id string) (Track, bool) {
 	return Track{}, false
 }
 
-// func (t Tracks) GetTrackByIndex(index int) (Track, bool) {
-// 	if index < 0 || index >= len(t) {
-// 		return Track{}, false
-// 	}
-// 	return t[index], true
-// }
+func (t Tracks) GetRange(from, to int) []Track {
+	return t[from:to]
+}
+
+func (t Track) String() string {
+	return t.Name + " --> " + t.Command
+}
 
 func getTracks(ctx context.Context) (Tracks, error) {
 	// Make a get request

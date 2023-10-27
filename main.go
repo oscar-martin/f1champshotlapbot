@@ -19,39 +19,19 @@ import (
 )
 
 const (
-	menuTracks = "/tracks"
+	menuTracks = "/circuitos"
 )
-
-// struct to process the next json payload
-//
-//	{
-//		"driver": "Sanchez",
-//		"TrackCourse": "Autodromo do Interlagos",
-//		"s1": 17.7163,
-//		"s2": 38.2925,
-//		"s3": 17.0742,
-//		"time": 73.083,
-//		"fuel": 0.627,
-//		"fl": 0.89,
-//		"fr": 0.871,
-//		"rl": 0.941,
-//		"rr": 0.941,
-//		"fcompound": "0,Soft",
-//		"rcompound": "0,Soft",
-//		"DateTime": "2022-11-11 18:38:36",
-//		"category": "F1Champs 2022,Ferrari",
-//		"carType": "Ferrari",
-//		"carClass": "Ferrari",
-//		"team": "Scuderia Ferrari",
-//		"lapcount": 51,
-//		"lapcountcomplete": 16
-//	},
 
 var (
 	trackMutex      sync.Mutex
 	tracks          Tracks
 	trackSessionsMu sync.Mutex
 	trackSessions   = map[string]Sessions{}
+
+	bot *tgbotapi.BotAPI
+
+	tracksPerPage = 10
+
 	// Menu texts
 	// firstMenu  = "<b>Menu 1</b>\n\nA beautiful menu with a shiny inline button."
 	// secondMenu = "<b>Menu 2</b>\n\nA better menu with even more shiny inline buttons."
@@ -63,7 +43,6 @@ var (
 
 	// Store bot screaming status
 	// screaming = false
-	bot *tgbotapi.BotAPI
 
 	// // Keyboard layout for the first menu. One button, one row
 	// firstMenuMarkup = tgbotapi.NewInlineKeyboardMarkup(
@@ -138,7 +117,17 @@ func handleUpdate(ctx context.Context, update tgbotapi.Update) {
 		handleMessage(ctx, update.Message)
 	// Handle button clicks
 	case update.CallbackQuery != nil:
-		handleButton(ctx, update.CallbackQuery)
+		// handleButton(ctx, update.CallbackQuery)
+		CallbackQueryHandler(update.CallbackQuery)
+	}
+}
+
+func CallbackQueryHandler(query *tgbotapi.CallbackQuery) {
+	split := strings.Split(query.Data, ":")
+	if split[0] == "pager" {
+		maxPages := len(tracks) / tracksPerPage
+		HandleNavigationCallbackQuery(query.Message.Chat.ID, query.Message.MessageID, maxPages, tracks, split[1:]...)
+		return
 	}
 }
 
@@ -176,28 +165,36 @@ func handleMessage(ctx context.Context, message *tgbotapi.Message) {
 	}
 }
 
-func handleButton(ctx context.Context, query *tgbotapi.CallbackQuery) {
-	var text string
+// func handleButton(ctx context.Context, query *tgbotapi.CallbackQuery) {
+// 	var text string
 
-	markup := tgbotapi.NewInlineKeyboardMarkup()
-	message := query.Message
+// 	markup := tgbotapi.NewInlineKeyboardMarkup()
+// 	message := query.Message
 
-	// if query.Data == nextButton {
-	// 	text = secondMenu
-	// 	markup = secondMenuMarkup
-	// } else if query.Data == backButton {
-	// 	text = firstMenu
-	// 	markup = firstMenuMarkup
-	// }
+// 	// if query.Data == nextButton {
+// 	// 	text = secondMenu
+// 	// 	markup = secondMenuMarkup
+// 	// } else if query.Data == backButton {
+// 	// 	text = firstMenu
+// 	// 	markup = firstMenuMarkup
+// 	// }
 
-	callbackCfg := tgbotapi.NewCallback(query.ID, "")
-	bot.Send(callbackCfg)
+// 	callbackCfg := tgbotapi.NewCallback(query.ID, "")
+// 	_, err := bot.Send(callbackCfg)
+// 	if err != nil {
+// 		log.Printf("An error occured: %s", err.Error())
+// 		return
+// 	}
 
-	// Replace menu text and keyboard
-	msg := tgbotapi.NewEditMessageTextAndMarkup(message.Chat.ID, message.MessageID, text, markup)
-	msg.ParseMode = tgbotapi.ModeHTML
-	bot.Send(msg)
-}
+// 	// Replace menu text and keyboard
+// 	msg := tgbotapi.NewEditMessageTextAndMarkup(message.Chat.ID, message.MessageID, text, markup)
+// 	msg.ParseMode = tgbotapi.ModeHTML
+// 	_, err = bot.Send(msg)
+// 	if err != nil {
+// 		log.Printf("An error occured: %s", err.Error())
+// 		return
+// 	}
+// }
 
 // When we get a command, we react accordingly
 func handleCommand(ctx context.Context, chatId int64, command string) error {
@@ -216,20 +213,18 @@ func handleCommand(ctx context.Context, chatId int64, command string) error {
 			return err
 		}
 
-		var message string
 		if len(tracks) > 0 {
-			tracksStrings := make([]string, len(tracks))
-			for i, track := range tracks {
-				tracksStrings[i] = track.Name + " --> " + track.Command
+			err := SendTracksData(chatId, 0, tracksPerPage, len(tracks)/tracksPerPage, nil, tracks)
+			if err != nil {
+				return err
 			}
-			message = strings.Join(tracksStrings, "\n")
 		} else {
-			message = "No hay circuitos disponibles"
-		}
-		msg := tgbotapi.NewMessage(chatId, message)
-		_, err = bot.Send(msg)
-		if err != nil {
-			return err
+			message := "No hay circuitos disponibles"
+			msg := tgbotapi.NewMessage(chatId, message)
+			_, err = bot.Send(msg)
+			if err != nil {
+				return err
+			}
 		}
 
 	// Fetch all sessions for a track
@@ -273,17 +268,12 @@ func handleCommand(ctx context.Context, chatId int64, command string) error {
 				t.SetOutputMirror(&b)
 				t.SetStyle(table.StyleRounded)
 				t.AppendSeparator()
-				// t.AppendHeader(table.Row{"Dri", "Times", "S1", "S2", "S3"})
-				t.AppendHeader(table.Row{"Dri", "Times", "Sectors"})
-				// var message string
+				t.AppendHeader(table.Row{"PIL", "Tiempo", "Sectores"})
 				for _, session := range sessionsForCategory {
 					t.AppendRow([]interface{}{
 						getDriverCodeName(session.Driver),
 						secondsToMinutes(session.Time),
 						fmt.Sprintf("%s %s %s", toSectorTime(session.S1), toSectorTime(session.S2), toSectorTime(session.S3)),
-						// toSectorTime(session.S1),
-						// toSectorTime(session.S2),
-						// toSectorTime(session.S3),
 					})
 				}
 				t.Render()
@@ -291,7 +281,6 @@ func handleCommand(ctx context.Context, chatId int64, command string) error {
 				msg := tgbotapi.NewMessage(chatId, fmt.Sprintf("```%s```", b.String()))
 				msg.ParseMode = tgbotapi.ModeMarkdownV2
 
-				// msg := tgbotapi.NewMessage(chatId, message)
 				_, err = bot.Send(msg)
 				if err != nil {
 					return err
@@ -314,30 +303,30 @@ func handleCommand(ctx context.Context, chatId int64, command string) error {
 			}
 		}
 
-	// case command == menuCurrentTrack:
-	// 	if currentTrack == "" {
-	// 		message := "No hay circuitos disponibles"
-	// 		msg := tgbotapi.NewMessage(chatId, message)
-	// 		_, err = bot.Send(msg)
-	// 		if err != nil {
-	// 			return err
-	// 		}
-	// 	}
+		// case command == menuCurrentTrack:
+		// 	if currentTrack == "" {
+		// 		message := "No hay circuitos disponibles"
+		// 		msg := tgbotapi.NewMessage(chatId, message)
+		// 		_, err = bot.Send(msg)
+		// 		if err != nil {
+		// 			return err
+		// 		}
+		// 	}
 
-	// 	// find track index in tracks
-	// 	for i, track := range tracks {
-	// 		if track == currentTrack {
-	// 			return processCurrentTrackTimes(chatId, i, currentTrack)
-	// 		}
-	// 	}
-	// 	message := "No hay circuitos disponibles"
-	// 	msg := tgbotapi.NewMessage(chatId, message)
-	// 	_, err = bot.Send(msg)
-	// 	if err != nil {
-	// 		return err
-	// 	}
+		// 	// find track index in tracks
+		// 	for i, track := range tracks {
+		// 		if track == currentTrack {
+		// 			return processCurrentTrackTimes(chatId, i, currentTrack)
+		// 		}
+		// 	}
+		// 	message := "No hay circuitos disponibles"
+		// 	msg := tgbotapi.NewMessage(chatId, message)
+		// 	_, err = bot.Send(msg)
+		// 	if err != nil {
+		// 		return err
+		// 	}
 
-	case command == "/whisper":
+		// case command == "/whisper":
 		// var b bytes.Buffer
 		// t := table.NewWriter()
 		// t.SetOutputMirror(&b)
@@ -362,7 +351,7 @@ func handleCommand(ctx context.Context, chatId int64, command string) error {
 		// 	return err
 		// }
 
-	case command == "/menu":
+		// case command == "/menu":
 		// err = sendMenu(chatId)
 	}
 

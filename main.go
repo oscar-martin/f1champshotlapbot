@@ -111,6 +111,8 @@ func receiveUpdates(ctx context.Context, updates tgbotapi.UpdatesChannel) {
 }
 
 func handleUpdate(ctx context.Context, update tgbotapi.Update) {
+	fmt.Printf("%+v\n", update.Message)
+
 	switch {
 	// Handle messages
 	case update.Message != nil:
@@ -118,6 +120,7 @@ func handleUpdate(ctx context.Context, update tgbotapi.Update) {
 	// Handle button clicks
 	case update.CallbackQuery != nil:
 		// handleButton(ctx, update.CallbackQuery)
+		fmt.Printf("%+v\n", update.CallbackQuery)
 		CallbackQueryHandler(update.CallbackQuery)
 	}
 }
@@ -128,6 +131,86 @@ func CallbackQueryHandler(query *tgbotapi.CallbackQuery) {
 		maxPages := len(tracks) / tracksPerPage
 		HandleNavigationCallbackQuery(query.Message.Chat.ID, query.Message.MessageID, maxPages, tracks, split[1:]...)
 		return
+	} else if split[0] == "Sectores" || split[0] == "Compuesto" || split[0] == "Vueltas" || split[0] == "Equipo" {
+		trackId := split[1]
+		categoryId := split[2]
+
+		track, found := tracks.GetTrackByID(fmt.Sprint(trackId))
+		if !found {
+			message := "No hay sesiones disponibles"
+			msg := tgbotapi.NewMessage(query.Message.Chat.ID, message)
+			_, err := bot.Send(msg)
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			return
+		}
+		if sessions, ok := trackSessions[track.ID]; ok {
+			sessionsForCategory := sessions.GetSessionsByCategoryID(categoryId)
+
+			if len(sessionsForCategory) > 0 {
+				sort.Slice(sessionsForCategory, func(i, j int) bool {
+					return sessionsForCategory[i].Time < sessionsForCategory[j].Time
+				})
+
+				var b bytes.Buffer
+				t := table.NewWriter()
+				t.SetOutputMirror(&b)
+				t.SetStyle(table.StyleRounded)
+				t.AppendSeparator()
+
+				t.AppendHeader(table.Row{"PIL", "Tiempo", split[0]})
+				for _, session := range sessionsForCategory {
+					if split[0] == "Sectores" {
+						t.AppendRow([]interface{}{
+							getDriverCodeName(session.Driver),
+							secondsToMinutes(session.Time),
+							fmt.Sprintf("%s %s %s", toSectorTime(session.S1), toSectorTime(session.S2), toSectorTime(session.S3)),
+						})
+					} else if split[0] == "Compuesto" {
+						tyreSlice := strings.Split(session.Fcompound, ",")
+						tyre := "(desconocido)"
+						if len(tyreSlice) > 0 {
+							tyre = tyreSlice[len(tyreSlice)-1]
+						}
+						t.AppendRow([]interface{}{
+							getDriverCodeName(session.Driver),
+							secondsToMinutes(session.Time),
+							tyre,
+						})
+					} else if split[0] == "Vueltas" {
+						t.AppendRow([]interface{}{
+							getDriverCodeName(session.Driver),
+							secondsToMinutes(session.Time),
+							fmt.Sprintf("%d/%d", session.Lapcountcomplete, session.Lapcount),
+						})
+					} else if split[0] == "Equipo" {
+						t.AppendRow([]interface{}{
+							getDriverCodeName(session.Driver),
+							secondsToMinutes(session.Time),
+							session.Team,
+						})
+					}
+				}
+				t.Render()
+
+				msg := tgbotapi.NewMessage(query.Message.Chat.ID, fmt.Sprintf("```%s```", b.String()))
+				msg.ParseMode = tgbotapi.ModeMarkdownV2
+				msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+					tgbotapi.NewInlineKeyboardRow(
+						tgbotapi.NewInlineKeyboardButtonData("Sectores", fmt.Sprintf("Sectores:%s:%s", track.ID, categoryId)),
+						tgbotapi.NewInlineKeyboardButtonData("Compuesto", fmt.Sprintf("Compuesto:%s:%s", track.ID, categoryId)),
+						tgbotapi.NewInlineKeyboardButtonData("Vueltas", fmt.Sprintf("Vueltas:%s:%s", track.ID, categoryId)),
+						tgbotapi.NewInlineKeyboardButtonData("Equipo", fmt.Sprintf("Equipo:%s:%s", track.ID, categoryId)),
+					),
+				)
+				_, err := bot.Send(msg)
+				if err != nil {
+					return
+				}
+			}
+		}
 	}
 }
 
@@ -280,7 +363,14 @@ func handleCommand(ctx context.Context, chatId int64, command string) error {
 
 				msg := tgbotapi.NewMessage(chatId, fmt.Sprintf("```%s```", b.String()))
 				msg.ParseMode = tgbotapi.ModeMarkdownV2
-
+				msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+					tgbotapi.NewInlineKeyboardRow(
+						tgbotapi.NewInlineKeyboardButtonData("Sectores", fmt.Sprintf("Sectores:%s:%s", track.ID, categoryId)),
+						tgbotapi.NewInlineKeyboardButtonData("Compuesto", fmt.Sprintf("Compuesto:%s:%s", track.ID, categoryId)),
+						tgbotapi.NewInlineKeyboardButtonData("Vueltas", fmt.Sprintf("Vueltas:%s:%s", track.ID, categoryId)),
+						tgbotapi.NewInlineKeyboardButtonData("Equipo", fmt.Sprintf("Equipo:%s:%s", track.ID, categoryId)),
+					),
+				)
 				_, err = bot.Send(msg)
 				if err != nil {
 					return err

@@ -32,7 +32,8 @@ func TracksTextMarkup(currentPage, count, maxPages int, tracks Tracks) (text str
 	for _, track := range ts {
 		trackNames = append(trackNames, track.String())
 	}
-	text = strings.Join(trackNames, "\n")
+	text = "Elige el circuito de la lista:\n\n"
+	text += strings.Join(trackNames, "\n")
 
 	var rows []tgbotapi.InlineKeyboardButton
 	if currentPage > 0 {

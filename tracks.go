@@ -38,7 +38,7 @@ func (t Track) CommandString() string {
 
 func getTracks(ctx context.Context) (Tracks, error) {
 	// Make a get request
-	req, err := http.NewRequestWithContext(ctx, "GET", "https://api.f1champs.es/v3/laps?tracklist=tracklist", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.f1champs.es/v3/laps?tracklist=tracklist", nil)
 	if err != nil {
 		return nil, err
 	}

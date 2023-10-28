@@ -82,7 +82,7 @@ func (s Sessions) GetSessionsByCategoryID(catId string) []Session {
 
 func GetSessions(ctx context.Context, track string) (Sessions, error) {
 	// Make a get request
-	req, err := http.NewRequestWithContext(ctx, "GET", "https://api.f1champs.es/v3/laps?track="+url.QueryEscape(track), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.f1champs.es/v3/laps?track="+url.QueryEscape(track), nil)
 	if err != nil {
 		return nil, err
 	}

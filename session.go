@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -35,6 +36,10 @@ type Session struct {
 type Category struct {
 	ID   string
 	Name string
+}
+
+func (c Category) CommandString(trackId string) string {
+	return " ▸ " + c.Name + fmt.Sprintf(" ➡ /%s_%s", trackId, c.ID)
 }
 
 type Sessions []Session

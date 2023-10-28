@@ -30,7 +30,7 @@ func TracksTextMarkup(currentPage, count, maxPages int, tracks Tracks) (text str
 	ts := tracks.GetRange(currentPage*count, currentPage*count+count)
 	var trackNames []string
 	for _, track := range ts {
-		trackNames = append(trackNames, track.String())
+		trackNames = append(trackNames, track.CommandString())
 	}
 	text = "Elige el circuito de la lista:\n\n"
 	text += strings.Join(trackNames, "\n")

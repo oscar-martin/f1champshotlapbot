@@ -32,7 +32,7 @@ func (t Tracks) GetRange(from, to int) []Track {
 	return t[from:to]
 }
 
-func (t Track) String() string {
+func (t Track) CommandString() string {
 	return " ▸ " + t.Name + " ➡ " + t.Command
 }
 

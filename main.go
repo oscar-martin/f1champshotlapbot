@@ -21,6 +21,7 @@ import (
 )
 
 const (
+	menuStart              = "/start"
 	menuTracks             = "/circuitos"
 	inlineKeyboardTimes    = "Tiempos"
 	inlineKeyboardSectors  = "Sectores"
@@ -127,7 +128,6 @@ func receiveUpdates(ctx context.Context, updates tgbotapi.UpdatesChannel) {
 }
 
 func handleUpdate(ctx context.Context, update tgbotapi.Update) {
-	// fmt.Printf("%+v\n", update.Message)
 	trackMutex.Lock()
 	defer trackMutex.Unlock()
 	trackSessionsMu.Lock()
@@ -138,7 +138,6 @@ func handleUpdate(ctx context.Context, update tgbotapi.Update) {
 		handleMessage(ctx, update.Message)
 	// Handle button clicks
 	case update.CallbackQuery != nil:
-		// fmt.Printf("%+v\n", update.CallbackQuery)
 		CallbackQueryHandler(update.CallbackQuery)
 	}
 }
@@ -156,95 +155,12 @@ func CallbackQueryHandler(query *tgbotapi.CallbackQuery) {
 		split[0] == inlineKeyboardTeam ||
 		split[0] == inlineKeyboardDriver ||
 		split[0] == inlineKeyboardDate {
+		infoType := split[0]
 		trackId := split[1]
 		categoryId := split[2]
-
-		track, found := tracks.GetTrackByID(fmt.Sprint(trackId))
-		if !found {
-			message := fmt.Sprintf("No hay sesiones disponibles. Vuelve a probar %s", menuTracks)
-			msg := tgbotapi.NewMessage(query.Message.Chat.ID, message)
-			_, err := bot.Send(msg)
-			if err != nil {
-				log.Println(err)
-				return
-			}
-			return
-		}
-		if sessions, ok := trackSessions[track.ID]; ok {
-			sessionsForCategory := sessions.GetSessionsByCategoryID(categoryId)
-
-			if len(sessionsForCategory) > 0 {
-				sort.Slice(sessionsForCategory, func(i, j int) bool {
-					return sessionsForCategory[i].Time < sessionsForCategory[j].Time
-				})
-
-				// read the category name from the first session
-				_, category := extractCategory(sessionsForCategory[0].Category)
-
-				var b bytes.Buffer
-				t := table.NewWriter()
-				t.SetOutputMirror(&b)
-				t.SetStyle(table.StyleRounded)
-				t.AppendSeparator()
-
-				t.AppendHeader(table.Row{tableDriver, split[0]})
-				for _, session := range sessionsForCategory {
-					if split[0] == inlineKeyboardTimes {
-						t.AppendRow([]interface{}{
-							getDriverCodeName(session.Driver),
-							secondsToMinutes(session.Time),
-						})
-					} else if split[0] == inlineKeyboardSectors {
-						t.AppendRow([]interface{}{
-							getDriverCodeName(session.Driver),
-							fmt.Sprintf("%s %s %s", toSectorTime(session.S1), toSectorTime(session.S2), toSectorTime(session.S3)),
-						})
-					} else if split[0] == inlineKeyboardCompound {
-						tyreSlice := strings.Split(session.Fcompound, ",")
-						tyre := "(desconocido)"
-						if len(tyreSlice) > 0 {
-							tyre = tyreSlice[len(tyreSlice)-1]
-						}
-						t.AppendRow([]interface{}{
-							getDriverCodeName(session.Driver),
-							tyre,
-						})
-					} else if split[0] == inlineKeyboardLaps {
-						t.AppendRow([]interface{}{
-							getDriverCodeName(session.Driver),
-							fmt.Sprintf("%d/%d", session.Lapcountcomplete, session.Lapcount),
-						})
-					} else if split[0] == inlineKeyboardTeam {
-						t.AppendRow([]interface{}{
-							getDriverCodeName(session.Driver),
-							session.CarClass,
-						})
-					} else if split[0] == inlineKeyboardDriver {
-						t.AppendRow([]interface{}{
-							getDriverCodeName(session.Driver),
-							session.Driver,
-						})
-					} else if split[0] == inlineKeyboardDate {
-						t.AppendRow([]interface{}{
-							getDriverCodeName(session.Driver),
-							session.DateTime,
-						})
-					}
-				}
-				t.Render()
-
-				keyboard := getInlineKeyboardForCategory(track.ID, categoryId)
-
-				var cfg tgbotapi.Chattable
-				msg := tgbotapi.NewEditMessageText(query.Message.Chat.ID, query.Message.MessageID, fmt.Sprintf("```\nResultados en %q para %q\n\n%s```", track.Name, category, b.String()))
-				msg.ParseMode = tgbotapi.ModeMarkdownV2
-				msg.ReplyMarkup = &keyboard
-				cfg = msg
-				_, err := bot.Send(cfg)
-				if err != nil {
-					return
-				}
-			}
+		err := sendData(query.Message.Chat.ID, &query.Message.MessageID, trackId, categoryId, infoType)
+		if err != nil {
+			log.Printf("An error occured: %s", err.Error())
 		}
 	}
 }
@@ -297,6 +213,12 @@ func handleCommand(ctx context.Context, chatId int64, command string) error {
 	commandTrackId := regexp.MustCompile(`^\/(\d+)$`)
 	commandTrackSessionId := regexp.MustCompile(`^\/(\d+)_(.+)$`)
 	switch {
+	case command == menuStart:
+		message := "Hola, soy el bot de F1Champs que permite ver las Hotlaps registradas. Puedes usar los siguientes comandos:\n\n"
+		message += menuTracks + " - Muestra la lista de circuitos"
+		msg := tgbotapi.NewMessage(chatId, message)
+		_, err = bot.Send(msg)
+		return err
 
 	// Fetch all tracks
 	case command == menuTracks:
@@ -325,7 +247,7 @@ func handleCommand(ctx context.Context, chatId int64, command string) error {
 		trackId, _ := strconv.Atoi(commandTrackId.FindStringSubmatch(command)[1])
 		track, found := tracks.GetTrackByID(fmt.Sprint(trackId))
 		if !found {
-			message := fmt.Sprintf("No hay circuitos disponibles. Vuelve a probar %s", menuTracks)
+			message := fmt.Sprintf("El circuito seleccionado no se ha encontrado. Vuelve a listarlos con %s", menuTracks)
 			msg := tgbotapi.NewMessage(chatId, message)
 			_, err = bot.Send(msg)
 			return err
@@ -334,61 +256,11 @@ func handleCommand(ctx context.Context, chatId int64, command string) error {
 
 	// Fetch all sessions for a track and a category
 	case commandTrackSessionId.MatchString(command):
-		trackId, _ := strconv.Atoi(commandTrackSessionId.FindStringSubmatch(command)[1])
+		trackId := commandTrackSessionId.FindStringSubmatch(command)[1]
 		categoryId := commandTrackSessionId.FindStringSubmatch(command)[2]
-		track, found := tracks.GetTrackByID(fmt.Sprint(trackId))
-		if !found {
-			message := fmt.Sprintf("No hay sesiones disponibles. Vuelve a probar %s", menuTracks)
-			msg := tgbotapi.NewMessage(chatId, message)
-			_, err = bot.Send(msg)
-			return err
-		}
-		if sessions, ok := trackSessions[track.ID]; ok {
-			sessionsForCategory := sessions.GetSessionsByCategoryID(categoryId)
-
-			if len(sessionsForCategory) > 0 {
-				sort.Slice(sessionsForCategory, func(i, j int) bool {
-					return sessionsForCategory[i].Time < sessionsForCategory[j].Time
-				})
-				// read the category name from the first session
-				_, category := extractCategory(sessionsForCategory[0].Category)
-
-				var b bytes.Buffer
-				t := table.NewWriter()
-				t.SetOutputMirror(&b)
-				t.SetStyle(table.StyleRounded)
-				t.AppendSeparator()
-				t.AppendHeader(table.Row{tableDriver, inlineKeyboardTimes})
-				for _, session := range sessionsForCategory {
-					t.AppendRow([]interface{}{
-						getDriverCodeName(session.Driver),
-						secondsToMinutes(session.Time),
-					})
-				}
-				t.Render()
-
-				keyboard := getInlineKeyboardForCategory(track.ID, categoryId)
-				var cfg tgbotapi.Chattable
-				msg := tgbotapi.NewMessage(chatId, fmt.Sprintf("```\nResultados en %q para %q\n\n%s```", track.Name, category, b.String()))
-				msg.ParseMode = tgbotapi.ModeMarkdownV2
-				msg.ReplyMarkup = keyboard
-				cfg = msg
-				_, err = bot.Send(cfg)
-				if err != nil {
-					return err
-				}
-
-			} else {
-				message := fmt.Sprintf("No hay sesiones disponibles. Vuelve a probar %s", menuTracks)
-				msg := tgbotapi.NewMessage(chatId, message)
-				_, err = bot.Send(msg)
-				return err
-			}
-		} else {
-			message := fmt.Sprintf("No hay sesiones disponibles. Vuelve a probar %s", menuTracks)
-			msg := tgbotapi.NewMessage(chatId, message)
-			_, err = bot.Send(msg)
-			return err
+		err := sendData(chatId, nil, trackId, categoryId, inlineKeyboardTimes)
+		if err != nil {
+			log.Printf("An error occured: %s", err.Error())
 		}
 	}
 
@@ -414,15 +286,116 @@ func processCurrentTrackTimes(ctx context.Context, chatId int64, track Track) er
 	if len(cats) > 0 {
 		categoriesStrings := make([]string, len(cats))
 		for i, cat := range cats {
-			categoriesStrings[i] = " ▸ " + cat.Name + fmt.Sprintf(" ➡ /%s_%s", track.ID, cat.ID)
+			categoriesStrings[i] = cat.CommandString(track.ID)
 		}
 
 		message += strings.Join(categoriesStrings, "\n")
 	} else {
-		message = "No hay sesiones disponibles"
+		message = "No hay categorías para este circuito"
 	}
 	msg := tgbotapi.NewMessage(chatId, message)
 	_, err := bot.Send(msg)
 
 	return err
+}
+
+func sendData(chatId int64, messageId *int, trackId, categoryId, infoType string) error {
+	track, found := tracks.GetTrackByID(trackId)
+	if !found {
+		message := fmt.Sprintf("El circuito seleccionado no se ha encontrado. Vuelve a probar %s", menuTracks)
+		msg := tgbotapi.NewMessage(chatId, message)
+		_, err := bot.Send(msg)
+		return err
+	}
+	sessions, ok := trackSessions[track.ID]
+	if !ok {
+		message := fmt.Sprintf("No se han encontrado la sesiones para el circuito. Vuelve a probar %s", menuTracks)
+		msg := tgbotapi.NewMessage(chatId, message)
+		_, err := bot.Send(msg)
+		return err
+	}
+	sessionsForCategory := sessions.GetSessionsByCategoryID(categoryId)
+
+	if len(sessionsForCategory) > 0 {
+		sort.Slice(sessionsForCategory, func(i, j int) bool {
+			return sessionsForCategory[i].Time < sessionsForCategory[j].Time
+		})
+
+		// read the category name from the first session
+		_, category := extractCategory(sessionsForCategory[0].Category)
+
+		var b bytes.Buffer
+		t := table.NewWriter()
+		t.SetOutputMirror(&b)
+		t.SetStyle(table.StyleRounded)
+		t.AppendSeparator()
+
+		t.AppendHeader(table.Row{tableDriver, infoType})
+		for _, session := range sessionsForCategory {
+			switch infoType {
+			case inlineKeyboardTimes:
+				t.AppendRow([]interface{}{
+					getDriverCodeName(session.Driver),
+					secondsToMinutes(session.Time),
+				})
+			case inlineKeyboardSectors:
+				t.AppendRow([]interface{}{
+					getDriverCodeName(session.Driver),
+					fmt.Sprintf("%s %s %s", toSectorTime(session.S1), toSectorTime(session.S2), toSectorTime(session.S3)),
+				})
+			case inlineKeyboardCompound:
+				tyreSlice := strings.Split(session.Fcompound, ",")
+				tyre := "(desconocido)"
+				if len(tyreSlice) > 0 {
+					tyre = tyreSlice[len(tyreSlice)-1]
+				}
+				t.AppendRow([]interface{}{
+					getDriverCodeName(session.Driver),
+					tyre,
+				})
+			case inlineKeyboardLaps:
+				t.AppendRow([]interface{}{
+					getDriverCodeName(session.Driver),
+					fmt.Sprintf("%d/%d", session.Lapcountcomplete, session.Lapcount),
+				})
+			case inlineKeyboardTeam:
+				t.AppendRow([]interface{}{
+					getDriverCodeName(session.Driver),
+					session.CarClass,
+				})
+			case inlineKeyboardDriver:
+				t.AppendRow([]interface{}{
+					getDriverCodeName(session.Driver),
+					session.Driver,
+				})
+			case inlineKeyboardDate:
+				t.AppendRow([]interface{}{
+					getDriverCodeName(session.Driver),
+					session.DateTime,
+				})
+			}
+		}
+		t.Render()
+
+		keyboard := getInlineKeyboardForCategory(track.ID, categoryId)
+		var cfg tgbotapi.Chattable
+		if messageId == nil {
+			msg := tgbotapi.NewMessage(chatId, fmt.Sprintf("```\nResultados en %q para %q\n\n%s```", track.Name, category, b.String()))
+			msg.ParseMode = tgbotapi.ModeMarkdownV2
+			msg.ReplyMarkup = keyboard
+			cfg = msg
+		} else {
+			msg := tgbotapi.NewEditMessageText(chatId, *messageId, fmt.Sprintf("```\nResultados en %q para %q\n\n%s```", track.Name, category, b.String()))
+			msg.ParseMode = tgbotapi.ModeMarkdownV2
+			msg.ReplyMarkup = &keyboard
+			cfg = msg
+		}
+		_, err := bot.Send(cfg)
+		return err
+	} else {
+		message := "No hay sesiones registradas"
+		msg := tgbotapi.NewMessage(chatId, message)
+		_, err := bot.Send(msg)
+		return err
+	}
 }

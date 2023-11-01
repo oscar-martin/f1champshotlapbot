@@ -31,6 +31,9 @@ const (
 	inlineKeyboardDriver   = "Pilotos"
 	inlineKeyboardDate     = "Fecha"
 
+	EnvTelegramToken = "TELEGRAM_TOKEN"
+	EnvHotlapsDomain = "API_DOMAIN"
+
 	symbolTimes    = "⏱"
 	symbolSectors  = "🔂"
 	symbolCompound = "🛞"
@@ -47,6 +50,7 @@ var (
 	tracks          Tracks
 	trackSessionsMu sync.Mutex
 	trackSessions   = map[string]Sessions{}
+	domain          = ""
 
 	bot *tgbotapi.BotAPI
 
@@ -56,7 +60,17 @@ var (
 func main() {
 	var err error
 	// get token from env
-	token := os.Getenv("TELEGRAM_TOKEN")
+	token := os.Getenv(EnvTelegramToken)
+	if token == "" {
+		log.Fatalf("%s is not set", EnvTelegramToken)
+	}
+	domain = os.Getenv(EnvHotlapsDomain)
+	if domain == "" {
+		log.Fatalf("%s is not set", EnvHotlapsDomain)
+	}
+
+	domain = strings.TrimRight(domain, "/")
+
 	bot, err = tgbotapi.NewBotAPI(token)
 	if err != nil {
 		// Abort if something is wrong

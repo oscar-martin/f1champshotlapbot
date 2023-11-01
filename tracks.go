@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 )
@@ -38,7 +39,8 @@ func (t Track) CommandString() string {
 
 func getTracks(ctx context.Context) (Tracks, error) {
 	// Make a get request
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.f1champs.es/v3/laps?tracklist=tracklist", nil)
+	url := fmt.Sprintf("%s/v3/laps?tracklist=tracklist", domain)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}

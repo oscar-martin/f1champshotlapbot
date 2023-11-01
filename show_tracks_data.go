@@ -32,22 +32,20 @@ func TracksTextMarkup(currentPage, count, maxPages int, tracks Tracks) (text str
 	for _, track := range ts {
 		trackNames = append(trackNames, track.CommandString())
 	}
-	text = "Elige el circuito de la lista:\n\n"
+	text = fmt.Sprintf("Elige el circuito de la lista (%d/%d):\n\n", currentPage+1, maxPages)
 	text += strings.Join(trackNames, "\n")
 
 	var rows []tgbotapi.InlineKeyboardButton
-	if currentPage > 0 {
-		rows = append(rows, tgbotapi.NewInlineKeyboardButtonData("Anterior", fmt.Sprintf("pager:prev:%d:%d", currentPage, count)))
-	}
-	if currentPage < maxPages-1 {
-		rows = append(rows, tgbotapi.NewInlineKeyboardButtonData("Siguiente", fmt.Sprintf("pager:next:%d:%d", currentPage, count)))
-	}
+	rows = append(rows, tgbotapi.NewInlineKeyboardButtonData(symbolInit, fmt.Sprintf("%s:init:%d:%d", subcommandShowTracks, currentPage, count)))
+	rows = append(rows, tgbotapi.NewInlineKeyboardButtonData(symbolPrev, fmt.Sprintf("%s:prev:%d:%d", subcommandShowTracks, currentPage, count)))
+	rows = append(rows, tgbotapi.NewInlineKeyboardButtonData(symbolNext, fmt.Sprintf("%s:next:%d:%d", subcommandShowTracks, currentPage, count)))
+	rows = append(rows, tgbotapi.NewInlineKeyboardButtonData(symbolEnd, fmt.Sprintf("%s:end:%d:%d", subcommandShowTracks, currentPage, count)))
 
 	markup = tgbotapi.NewInlineKeyboardMarkup(rows)
 	return
 }
 
-func HandleNavigationCallbackQuery(chatId int64, messageId, maxPages int, tracks Tracks, data ...string) {
+func HandleTrackDataCallbackQuery(chatId int64, messageId, maxPages int, tracks Tracks, data ...string) {
 	pagerType := data[0]
 	currentPage, _ := strconv.Atoi(data[1])
 	itemsPerPage, _ := strconv.Atoi(data[2])
@@ -63,5 +61,11 @@ func HandleNavigationCallbackQuery(chatId int64, messageId, maxPages int, tracks
 		if previousPage >= 0 {
 			_ = SendTracksData(chatId, previousPage, itemsPerPage, maxPages, &messageId, tracks)
 		}
+	}
+	if pagerType == "init" {
+		_ = SendTracksData(chatId, 0, itemsPerPage, maxPages, &messageId, tracks)
+	}
+	if pagerType == "end" {
+		_ = SendTracksData(chatId, maxPages-1, itemsPerPage, maxPages, &messageId, tracks)
 	}
 }

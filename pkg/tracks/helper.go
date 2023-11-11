@@ -1,8 +1,7 @@
-package main
+package tracks
 
 import (
 	"fmt"
-	"hash/fnv"
 	"strings"
 )
 
@@ -14,24 +13,9 @@ func secondsToMinutes(seconds float64) string {
 	return fmt.Sprintf("%02d:%02d.%03d", minutes, int(seconds), milliseconds)
 }
 
-func extractCategory(category string) (id string, name string) {
-	if len(category) > 0 {
-		name = strings.Split(category, ",")[0]
-		id = strings.ToLower(strings.ReplaceAll(name, " ", "_"))
-	}
-	return
-}
-
 // method to convert to seconds and 3 milliseconds
 func toSectorTime(t float64) string {
 	return fmt.Sprintf("%.3f", t)
-}
-
-// convert name to a hash with a limit of 15 characters
-func toID(name string) string {
-	h := fnv.New32a()
-	h.Write([]byte(name))
-	return fmt.Sprint(h.Sum32())
 }
 
 func getDriverCodeName(name string) string {

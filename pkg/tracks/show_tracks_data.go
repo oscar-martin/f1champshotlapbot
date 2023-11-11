@@ -1,4 +1,4 @@
-package main
+package tracks
 
 import (
 	"fmt"
@@ -8,8 +8,15 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-func SendTracksData(chatId int64, currentPage, count, maxPages int, messageId *int, tracks Tracks) error {
-	text, keyboard := TracksTextMarkup(currentPage, count, maxPages, tracks)
+const (
+	symbolInit = "⏮"
+	symbolPrev = "◀️"
+	symbolNext = "▶️"
+	symbolEnd  = "⏭"
+)
+
+func SendTracksData(chatId int64, currentPage, count, maxPages int, messageId *int, tm *Manager) error {
+	text, keyboard := TracksTextMarkup(currentPage, count, maxPages, tm)
 
 	var cfg tgbotapi.Chattable
 	if messageId == nil {
@@ -22,12 +29,12 @@ func SendTracksData(chatId int64, currentPage, count, maxPages int, messageId *i
 		cfg = msg
 	}
 
-	_, err := bot.Send(cfg)
+	_, err := tm.bot.Send(cfg)
 	return err
 }
 
-func TracksTextMarkup(currentPage, count, maxPages int, tracks Tracks) (text string, markup tgbotapi.InlineKeyboardMarkup) {
-	ts := tracks.GetRange(currentPage*count, currentPage*count+count)
+func TracksTextMarkup(currentPage, count, maxPages int, tm *Manager) (text string, markup tgbotapi.InlineKeyboardMarkup) {
+	ts := tm.GetRange(currentPage*count, currentPage*count+count)
 	var trackNames []string
 	for _, track := range ts {
 		trackNames = append(trackNames, track.CommandString())
@@ -45,7 +52,7 @@ func TracksTextMarkup(currentPage, count, maxPages int, tracks Tracks) (text str
 	return
 }
 
-func HandleTrackDataCallbackQuery(chatId int64, messageId, maxPages int, tracks Tracks, data ...string) {
+func HandleTrackDataCallbackQuery(chatId int64, messageId, maxPages int, tm *Manager, data ...string) {
 	pagerType := data[0]
 	currentPage, _ := strconv.Atoi(data[1])
 	itemsPerPage, _ := strconv.Atoi(data[2])
@@ -53,19 +60,19 @@ func HandleTrackDataCallbackQuery(chatId int64, messageId, maxPages int, tracks 
 	if pagerType == "next" {
 		nextPage := currentPage + 1
 		if nextPage < maxPages {
-			_ = SendTracksData(chatId, nextPage, itemsPerPage, maxPages, &messageId, tracks)
+			_ = SendTracksData(chatId, nextPage, itemsPerPage, maxPages, &messageId, tm)
 		}
 	}
 	if pagerType == "prev" {
 		previousPage := currentPage - 1
 		if previousPage >= 0 {
-			_ = SendTracksData(chatId, previousPage, itemsPerPage, maxPages, &messageId, tracks)
+			_ = SendTracksData(chatId, previousPage, itemsPerPage, maxPages, &messageId, tm)
 		}
 	}
 	if pagerType == "init" {
-		_ = SendTracksData(chatId, 0, itemsPerPage, maxPages, &messageId, tracks)
+		_ = SendTracksData(chatId, 0, itemsPerPage, maxPages, &messageId, tm)
 	}
 	if pagerType == "end" {
-		_ = SendTracksData(chatId, maxPages-1, itemsPerPage, maxPages, &messageId, tracks)
+		_ = SendTracksData(chatId, maxPages-1, itemsPerPage, maxPages, &messageId, tm)
 	}
 }

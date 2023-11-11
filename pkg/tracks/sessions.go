@@ -1,4 +1,4 @@
-package main
+package tracks
 
 import (
 	"context"
@@ -33,54 +33,7 @@ type Session struct {
 	Lapcountcomplete int     `json:"lapcountcomplete"`
 }
 
-type Category struct {
-	ID   string
-	Name string
-}
-
-func (c Category) CommandString(trackId string) string {
-	return " ▸ " + c.Name + fmt.Sprintf(" ➡ /%s_%s", trackId, c.ID)
-}
-
-type Sessions []Session
-
-func (s Sessions) GetCategories() []Category {
-	cats := map[string]string{}
-	for _, session := range s {
-		if _, exits := cats[session.Category]; !exits {
-			id, name := extractCategory(session.Category)
-			if id != "" {
-				cats[id] = name
-			}
-		}
-	}
-
-	categories := make([]Category, 0, len(cats))
-
-	for id, name := range cats {
-		categories = append(categories, Category{ID: id, Name: name})
-	}
-
-	// sort categories by name
-	sort.Slice(categories, func(i, j int) bool {
-		return categories[i].Name < categories[j].Name
-	})
-
-	return categories
-}
-
-func (s Sessions) GetSessionsByCategoryID(catId string) []Session {
-	sessionsForCategory := []Session{}
-	for _, session := range s {
-		id, _ := extractCategory(session.Category)
-		if id == catId {
-			sessionsForCategory = append(sessionsForCategory, session)
-		}
-	}
-	return sessionsForCategory
-}
-
-func GetSessions(ctx context.Context, track string) (Sessions, error) {
+func getSessions(ctx context.Context, track string, domain string) ([]Session, error) {
 	// Make a get request
 	url := fmt.Sprintf("%s/v3/laps?track=%s", domain, url.QueryEscape(track))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -109,6 +62,10 @@ func GetSessions(ctx context.Context, track string) (Sessions, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	sort.Slice(trackSessions, func(i, j int) bool {
+		return trackSessions[i].Time < trackSessions[j].Time
+	})
 
 	return trackSessions, nil
 }

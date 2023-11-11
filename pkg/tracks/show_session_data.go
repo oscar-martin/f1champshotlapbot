@@ -1,50 +1,68 @@
-package main
+package tracks
 
 import (
 	"bytes"
 	"fmt"
 	"log"
-	"sort"
 	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/jedib0t/go-pretty/v6/table"
 )
 
-func HandleSessionDataCallbackQuery(chatId int64, messageId *int, data ...string) {
+const (
+	inlineKeyboardTimes    = "Tiempos"
+	inlineKeyboardSectors  = "Sectores"
+	inlineKeyboardCompound = "Gomas"
+	inlineKeyboardLaps     = "Vueltas"
+	inlineKeyboardTeam     = "Coches"
+	inlineKeyboardDriver   = "Pilotos"
+	inlineKeyboardDate     = "Fecha"
+
+	symbolTimes    = "⏱"
+	symbolSectors  = "🔂"
+	symbolCompound = "🛞"
+	symbolLaps     = "🏁"
+	symbolTeam     = "🏎️"
+	symbolDriver   = "👐"
+	symbolDate     = "⌚️"
+
+	subcommandShowTracks      = "show_tracks"
+	subcommandShowSessionData = "show_session_data"
+
+	tableDriver = "PIL"
+)
+
+func HandleSessionDataCallbackQuery(chatId int64, messageId *int, tm *Manager, data ...string) {
 	infoType := data[0]
 	trackId := data[1]
 	categoryId := data[2]
-	err := SendSessionData(chatId, messageId, trackId, categoryId, infoType)
+	err := SendSessionData(chatId, messageId, trackId, categoryId, infoType, tm)
 	if err != nil {
 		log.Printf("An error occured: %s", err.Error())
 	}
 }
 
-func SendSessionData(chatId int64, messageId *int, trackId, categoryId, infoType string) error {
-	track, found := tracks.GetTrackByID(trackId)
+func SendSessionData(chatId int64, messageId *int, trackId, categoryId, infoType string, tm *Manager) error {
+	track, found := tm.GetTrackByID(trackId)
 	if !found {
-		message := fmt.Sprintf("El circuito seleccionado no se ha encontrado. Vuelve a probar %s", menuTracks)
+		message := fmt.Sprintf("El circuito seleccionado no se ha encontrado. Vuelve a probar %s", MenuTracks)
 		msg := tgbotapi.NewMessage(chatId, message)
-		_, err := bot.Send(msg)
+		_, err := tm.bot.Send(msg)
 		return err
 	}
-	sessions, ok := trackSessions[track.ID]
-	if !ok {
-		message := fmt.Sprintf("No se han encontrado la sesiones para el circuito. Vuelve a probar %s", menuTracks)
+	category, found := track.GetCategoryById(categoryId)
+	if !found {
+		message := fmt.Sprintf("No se han encontrado la sesiones para el circuito. Vuelve a probar %s", MenuTracks)
 		msg := tgbotapi.NewMessage(chatId, message)
-		_, err := bot.Send(msg)
+		_, err := tm.bot.Send(msg)
 		return err
 	}
-	sessionsForCategory := sessions.GetSessionsByCategoryID(categoryId)
+
+	sessionsForCategory := category.Sessions
 
 	if len(sessionsForCategory) > 0 {
-		sort.Slice(sessionsForCategory, func(i, j int) bool {
-			return sessionsForCategory[i].Time < sessionsForCategory[j].Time
-		})
-
-		// read the category name from the first session
-		_, category := extractCategory(sessionsForCategory[0].Category)
+		categoryName := category.Name
 
 		var b bytes.Buffer
 		t := table.NewWriter()
@@ -102,25 +120,26 @@ func SendSessionData(chatId int64, messageId *int, trackId, categoryId, infoType
 		keyboard := getInlineKeyboardForCategory(track.ID, categoryId)
 		var cfg tgbotapi.Chattable
 		if messageId == nil {
-			msg := tgbotapi.NewMessage(chatId, fmt.Sprintf("```\nResultados en %q para %q\n\n%s```", track.Name, category, b.String()))
+			msg := tgbotapi.NewMessage(chatId, fmt.Sprintf("```\nResultados en %q para %q\n\n%s```", track.Name, categoryName, b.String()))
 			msg.ParseMode = tgbotapi.ModeMarkdownV2
 			msg.ReplyMarkup = keyboard
 			cfg = msg
 		} else {
-			msg := tgbotapi.NewEditMessageText(chatId, *messageId, fmt.Sprintf("```\nResultados en %q para %q\n\n%s```", track.Name, category, b.String()))
+			msg := tgbotapi.NewEditMessageText(chatId, *messageId, fmt.Sprintf("```\nResultados en %q para %q\n\n%s```", track.Name, categoryName, b.String()))
 			msg.ParseMode = tgbotapi.ModeMarkdownV2
 			msg.ReplyMarkup = &keyboard
 			cfg = msg
 		}
-		_, err := bot.Send(cfg)
+		_, err := tm.bot.Send(cfg)
 		return err
 	} else {
 		message := "No hay sesiones registradas"
 		msg := tgbotapi.NewMessage(chatId, message)
-		_, err := bot.Send(msg)
+		_, err := tm.bot.Send(msg)
 		return err
 	}
 }
+
 func getInlineKeyboardForCategory(trackId, categoryId string) tgbotapi.InlineKeyboardMarkup {
 	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(

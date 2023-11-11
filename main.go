@@ -2,64 +2,44 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"f1champshotlapsbot/pkg/servers"
+	"f1champshotlapsbot/pkg/tracks"
 	"log"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
-
-	"regexp"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 const (
-	menuStart              = "/start"
-	menuTracks             = "/circuitos"
-	inlineKeyboardTimes    = "Tiempos"
-	inlineKeyboardSectors  = "Sectores"
-	inlineKeyboardCompound = "Gomas"
-	inlineKeyboardLaps     = "Vueltas"
-	inlineKeyboardTeam     = "Coches"
-	inlineKeyboardDriver   = "Pilotos"
-	inlineKeyboardDate     = "Fecha"
-
 	EnvTelegramToken = "TELEGRAM_TOKEN"
 	EnvHotlapsDomain = "API_DOMAIN"
-
-	symbolTimes    = "⏱"
-	symbolSectors  = "🔂"
-	symbolCompound = "🛞"
-	symbolLaps     = "🏁"
-	symbolTeam     = "🏎️"
-	symbolDriver   = "👐"
-	symbolDate     = "⌚️"
-
-	symbolInit = "⏮"
-	symbolPrev = "◀️"
-	symbolNext = "▶️"
-	symbolEnd  = "⏭"
-
-	tableDriver = "PIL"
-
-	subcommandShowTracks      = "show_tracks"
-	subcommandShowSessionData = "show_session_data"
 )
 
+type Accepter interface {
+	AcceptCommand(command string) (bool, func(ctx context.Context, chatId int64) error)
+	AcceptButton(button string) (bool, func(ctx context.Context, chatId int64) error)
+	AcceptCallback(query *tgbotapi.CallbackQuery) (bool, func(ctx context.Context, query *tgbotapi.CallbackQuery))
+}
+
 var (
-	trackMutex      sync.Mutex
-	tracks          Tracks
-	trackSessionsMu sync.Mutex
-	trackSessions   = map[string]Sessions{}
-	domain          = ""
+	domain = ""
+	m      *Menu
+	tm     *tracks.Manager
+	sm     *servers.Manager
+	bot    *tgbotapi.BotAPI
 
-	bot *tgbotapi.BotAPI
+	accepters = []Accepter{}
 
-	tracksPerPage = 10
+	menuKeyboard = tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton(tracks.ButtonHotlaps),
+			tgbotapi.NewKeyboardButton(servers.ButtonLive),
+		),
+	)
 )
 
 func main() {
@@ -98,36 +78,40 @@ func main() {
 	// Pass cancellable context to goroutine
 	go receiveUpdates(ctx, updates)
 
+	// TODO: remove this
+	// ---------------------
+	CreateServers([]int{10001, 10002, 10004})
+	// ---------------------
+
+	m = NewMenu(bot)
+	tm = tracks.NewTrackManager(bot, domain)
+	sm = servers.NewManager(bot, domain)
+
+	// Register the accepters
+	accepters = append(accepters, m)
+	accepters = append(accepters, tm)
+	accepters = append(accepters, sm)
+
 	// Tell the user the bot is online
 	log.Println("Start listening for updates. Press Ctrl-C to stop it")
 
-	ticker := time.NewTicker(60 * time.Minute)
-	tickerDone := make(chan bool)
+	refreshHotlapsTicker := time.NewTicker(60 * time.Minute)
+	refreshServersTicker := time.NewTicker(5 * time.Minute)
+	exitChan := make(chan bool)
 
-	go func() {
-		for {
-			select {
-			case <-tickerDone:
-				return
-			case t := <-ticker.C:
-				fmt.Println("Resetting tracks and sessions at: ", t)
-				trackMutex.Lock()
-				tracks = Tracks{}
-				trackMutex.Unlock()
-				trackSessionsMu.Lock()
-				trackSessions = map[string]Sessions{}
-				trackSessionsMu.Unlock()
-			}
-		}
-	}()
+	// start the trackmanager sync process
+	tm.Sync(ctx, refreshHotlapsTicker, exitChan)
+	sm.Sync(ctx, refreshServersTicker, exitChan)
+
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
 
 	// lock the main thread until we receive a signal
 	<-sigs
 
-	ticker.Stop()
-	tickerDone <- true
+	refreshHotlapsTicker.Stop()
+	refreshServersTicker.Stop()
+	exitChan <- true
 
 	cancel()
 }
@@ -147,32 +131,19 @@ func receiveUpdates(ctx context.Context, updates tgbotapi.UpdatesChannel) {
 }
 
 func handleUpdate(ctx context.Context, update tgbotapi.Update) {
-	trackMutex.Lock()
-	defer trackMutex.Unlock()
-	trackSessionsMu.Lock()
-	defer trackSessionsMu.Unlock()
+	tm.Lock()
+	defer tm.Unlock()
 	switch {
 	// Handle messages
 	case update.Message != nil:
-		handleMessage(ctx, update.Message)
+		MessageHandler(ctx, update.Message)
 	// Handle button clicks
 	case update.CallbackQuery != nil:
-		CallbackQueryHandler(update.CallbackQuery)
+		CallbackQueryHandler(ctx, update.CallbackQuery)
 	}
 }
 
-func CallbackQueryHandler(query *tgbotapi.CallbackQuery) {
-	split := strings.Split(query.Data, ":")
-	if split[0] == subcommandShowTracks {
-		maxPages := len(tracks) / tracksPerPage
-		HandleTrackDataCallbackQuery(query.Message.Chat.ID, query.Message.MessageID, maxPages, tracks, split[1:]...)
-		return
-	} else if split[0] == subcommandShowSessionData {
-		HandleSessionDataCallbackQuery(query.Message.Chat.ID, &query.Message.MessageID, split[1:]...)
-	}
-}
-
-func handleMessage(ctx context.Context, message *tgbotapi.Message) {
+func MessageHandler(ctx context.Context, message *tgbotapi.Message) {
 	user := message.From
 	text := message.Text
 
@@ -185,7 +156,11 @@ func handleMessage(ctx context.Context, message *tgbotapi.Message) {
 
 	var err error
 	if message.IsCommand() {
+		// text is `/command-name`
 		err = handleCommand(ctx, message.Chat.ID, text)
+	} else {
+		// text is `button-text`
+		err = handleButton(ctx, message.Chat.ID, text)
 	}
 
 	if err != nil {
@@ -193,95 +168,31 @@ func handleMessage(ctx context.Context, message *tgbotapi.Message) {
 	}
 }
 
-// When we get a command, we react accordingly
-func handleCommand(ctx context.Context, chatId int64, command string) error {
-	var err error
-
-	commandTrackId := regexp.MustCompile(`^\/(\d+)$`)
-	commandTrackSessionId := regexp.MustCompile(`^\/(\d+)_(.+)$`)
-	switch {
-	case command == menuStart:
-		message := "Hola, soy el bot de F1Champs que permite ver las Hotlaps registradas. Puedes usar los siguientes comandos:\n\n"
-		message += menuTracks + " - Muestra la lista de circuitos"
-		msg := tgbotapi.NewMessage(chatId, message)
-		_, err = bot.Send(msg)
-		return err
-
-	// Fetch all tracks
-	case command == menuTracks:
-		if len(tracks) == 0 {
-			// if there is no tracks, fetch them
-			tracks, err = getTracks(ctx)
-			if err != nil {
-				return err
-			}
-		}
-
-		if len(tracks) > 0 {
-			err := SendTracksData(chatId, 0, tracksPerPage, len(tracks)/tracksPerPage, nil, tracks)
-			if err != nil {
-				return err
-			}
-		} else {
-			message := "No hay circuitos disponibles"
-			msg := tgbotapi.NewMessage(chatId, message)
-			_, err = bot.Send(msg)
-			return err
-		}
-
-	// Fetch all sessions for a track
-	case commandTrackId.MatchString(command):
-		trackId, _ := strconv.Atoi(commandTrackId.FindStringSubmatch(command)[1])
-		track, found := tracks.GetTrackByID(fmt.Sprint(trackId))
-		if !found {
-			message := fmt.Sprintf("El circuito seleccionado no se ha encontrado. Vuelve a listarlos con %s", menuTracks)
-			msg := tgbotapi.NewMessage(chatId, message)
-			_, err = bot.Send(msg)
-			return err
-		}
-		return processCurrentTrackTimes(ctx, chatId, track)
-
-	// Fetch all sessions for a track and a category
-	case commandTrackSessionId.MatchString(command):
-		trackId := commandTrackSessionId.FindStringSubmatch(command)[1]
-		categoryId := commandTrackSessionId.FindStringSubmatch(command)[2]
-		err := SendSessionData(chatId, nil, trackId, categoryId, inlineKeyboardTimes)
-		if err != nil {
-			log.Printf("An error occured: %s", err.Error())
+// When we get a button clicked, we react accordingly
+func handleButton(ctx context.Context, chatId int64, button string) error {
+	for _, accepter := range accepters {
+		if accept, handler := accepter.AcceptButton(button); accept {
+			return handler(ctx, chatId)
 		}
 	}
-
-	return err
+	return nil
 }
 
-func processCurrentTrackTimes(ctx context.Context, chatId int64, track Track) error {
-	var sessions Sessions
-	if trackSessions[track.ID] == nil {
-		var err error
-		sessions, err = GetSessions(ctx, track.Name)
-		if err != nil {
-			return err
+// When we get a command, we react accordingly
+func handleCommand(ctx context.Context, chatId int64, command string) error {
+	for _, accepter := range accepters {
+		if accept, handler := accepter.AcceptCommand(command); accept {
+			return handler(ctx, chatId)
 		}
-		trackSessions[track.ID] = sessions
-	} else {
-		sessions = trackSessions[track.ID]
 	}
+	return nil
+}
 
-	cats := sessions.GetCategories()
-
-	message := fmt.Sprintf("Elige categoría para %s:\n\n", track.Name)
-	if len(cats) > 0 {
-		categoriesStrings := make([]string, len(cats))
-		for i, cat := range cats {
-			categoriesStrings[i] = cat.CommandString(track.ID)
+func CallbackQueryHandler(ctx context.Context, query *tgbotapi.CallbackQuery) {
+	for _, accepter := range accepters {
+		if accept, handler := accepter.AcceptCallback(query); accept {
+			handler(ctx, query)
+			return
 		}
-
-		message += strings.Join(categoriesStrings, "\n")
-	} else {
-		message = "No hay categorías para este circuito"
 	}
-	msg := tgbotapi.NewMessage(chatId, message)
-	_, err := bot.Send(msg)
-
-	return err
 }

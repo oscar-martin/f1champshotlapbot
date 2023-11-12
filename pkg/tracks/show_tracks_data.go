@@ -43,10 +43,10 @@ func TracksTextMarkup(currentPage, count, maxPages int, tm *Manager) (text strin
 	text += strings.Join(trackNames, "\n")
 
 	var rows []tgbotapi.InlineKeyboardButton
-	rows = append(rows, tgbotapi.NewInlineKeyboardButtonData(symbolInit, fmt.Sprintf("%s:init:%d:%d", subcommandShowTracks, currentPage, count)))
-	rows = append(rows, tgbotapi.NewInlineKeyboardButtonData(symbolPrev, fmt.Sprintf("%s:prev:%d:%d", subcommandShowTracks, currentPage, count)))
-	rows = append(rows, tgbotapi.NewInlineKeyboardButtonData(symbolNext, fmt.Sprintf("%s:next:%d:%d", subcommandShowTracks, currentPage, count)))
-	rows = append(rows, tgbotapi.NewInlineKeyboardButtonData(symbolEnd, fmt.Sprintf("%s:end:%d:%d", subcommandShowTracks, currentPage, count)))
+	rows = append(rows, tgbotapi.NewInlineKeyboardButtonData(symbolInit, fmt.Sprintf("%s:init:%d:%d", SubcommandShowTracks, currentPage, count)))
+	rows = append(rows, tgbotapi.NewInlineKeyboardButtonData(symbolPrev, fmt.Sprintf("%s:prev:%d:%d", SubcommandShowTracks, currentPage, count)))
+	rows = append(rows, tgbotapi.NewInlineKeyboardButtonData(symbolNext, fmt.Sprintf("%s:next:%d:%d", SubcommandShowTracks, currentPage, count)))
+	rows = append(rows, tgbotapi.NewInlineKeyboardButtonData(symbolEnd, fmt.Sprintf("%s:end:%d:%d", SubcommandShowTracks, currentPage, count)))
 
 	markup = tgbotapi.NewInlineKeyboardMarkup(rows)
 	return

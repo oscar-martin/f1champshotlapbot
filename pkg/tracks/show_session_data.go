@@ -27,8 +27,8 @@ const (
 	symbolDriver   = "👐"
 	symbolDate     = "⌚️"
 
-	subcommandShowTracks      = "show_tracks"
-	subcommandShowSessionData = "show_session_data"
+	SubcommandShowTracks      = "show_tracks"
+	SubcommandShowSessionData = "show_session_data"
 
 	tableDriver = "PIL"
 )
@@ -46,14 +46,14 @@ func HandleSessionDataCallbackQuery(chatId int64, messageId *int, tm *Manager, d
 func SendSessionData(chatId int64, messageId *int, trackId, categoryId, infoType string, tm *Manager) error {
 	track, found := tm.GetTrackByID(trackId)
 	if !found {
-		message := fmt.Sprintf("El circuito seleccionado no se ha encontrado. Vuelve a probar %s", MenuTracks)
+		message := "El circuito seleccionado no se ha encontrado. Vuelve atrás y prueba otra vez"
 		msg := tgbotapi.NewMessage(chatId, message)
 		_, err := tm.bot.Send(msg)
 		return err
 	}
 	category, found := track.GetCategoryById(categoryId)
 	if !found {
-		message := fmt.Sprintf("No se han encontrado la sesiones para el circuito. Vuelve a probar %s", MenuTracks)
+		message := "No se han encontrado la sesiones para el circuito. Vuelve atrás y prueba otra vez"
 		msg := tgbotapi.NewMessage(chatId, message)
 		_, err := tm.bot.Send(msg)
 		return err
@@ -143,19 +143,19 @@ func SendSessionData(chatId int64, messageId *int, trackId, categoryId, infoType
 func getInlineKeyboardForCategory(trackId, categoryId string) tgbotapi.InlineKeyboardMarkup {
 	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardTimes+" "+symbolTimes, fmt.Sprintf("%s:%s:%s:%s", subcommandShowSessionData, inlineKeyboardTimes, trackId, categoryId)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardTimes+" "+symbolTimes, fmt.Sprintf("%s:%s:%s:%s", SubcommandShowSessionData, inlineKeyboardTimes, trackId, categoryId)),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardSectors+" "+symbolSectors, fmt.Sprintf("%s:%s:%s:%s", subcommandShowSessionData, inlineKeyboardSectors, trackId, categoryId)),
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardCompound+" "+symbolTimes, fmt.Sprintf("%s:%s:%s:%s", subcommandShowSessionData, inlineKeyboardCompound, trackId, categoryId)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardSectors+" "+symbolSectors, fmt.Sprintf("%s:%s:%s:%s", SubcommandShowSessionData, inlineKeyboardSectors, trackId, categoryId)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardCompound+" "+symbolTimes, fmt.Sprintf("%s:%s:%s:%s", SubcommandShowSessionData, inlineKeyboardCompound, trackId, categoryId)),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardLaps+" "+symbolLaps, fmt.Sprintf("%s:%s:%s:%s", subcommandShowSessionData, inlineKeyboardLaps, trackId, categoryId)),
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardTeam+" "+symbolTeam, fmt.Sprintf("%s:%s:%s:%s", subcommandShowSessionData, inlineKeyboardTeam, trackId, categoryId)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardLaps+" "+symbolLaps, fmt.Sprintf("%s:%s:%s:%s", SubcommandShowSessionData, inlineKeyboardLaps, trackId, categoryId)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardTeam+" "+symbolTeam, fmt.Sprintf("%s:%s:%s:%s", SubcommandShowSessionData, inlineKeyboardTeam, trackId, categoryId)),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardDriver+" "+symbolDriver, fmt.Sprintf("%s:%s:%s:%s", subcommandShowSessionData, inlineKeyboardDriver, trackId, categoryId)),
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardDate+" "+symbolDate, fmt.Sprintf("%s:%s:%s:%s", subcommandShowSessionData, inlineKeyboardDate, trackId, categoryId)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardDriver+" "+symbolDriver, fmt.Sprintf("%s:%s:%s:%s", SubcommandShowSessionData, inlineKeyboardDriver, trackId, categoryId)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardDate+" "+symbolDate, fmt.Sprintf("%s:%s:%s:%s", SubcommandShowSessionData, inlineKeyboardDate, trackId, categoryId)),
 		),
 	)
 }

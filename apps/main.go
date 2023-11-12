@@ -1,10 +1,8 @@
-package main
+package apps
 
 import (
 	"context"
 	"f1champshotlapsbot/pkg/menus"
-	"f1champshotlapsbot/pkg/servers"
-	"f1champshotlapsbot/pkg/tracks"
 	"fmt"
 	"time"
 
@@ -12,46 +10,48 @@ import (
 )
 
 const (
-	menuStart     = "/start"
-	menuMenu      = "/menu"
-	buttonHotlaps = "Hotlaps"
-	buttonLive    = "Live"
-	appName       = "menu"
+	menuStart      = "/start"
+	menuMenu       = "/menu"
+	buttonHotlaps  = "Hotlaps"
+	buttonLive     = "Live"
+	buttonSessions = "Sessions"
+	appName        = "menu"
 )
 
 var (
 	menuKeyboard = tgbotapi.NewReplyKeyboard(
 		tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton(buttonHotlaps),
+			tgbotapi.NewKeyboardButton(buttonSessions),
 			tgbotapi.NewKeyboardButton(buttonLive),
 		),
 	)
 )
 
-type Menu struct {
+type MainApp struct {
 	bot       *tgbotapi.BotAPI
 	accepters []Accepter
 }
 
-func NewMenu(ctx context.Context, bot *tgbotapi.BotAPI, domain string, exitChan chan bool, refreshHotlapsTicker, refreshServersTicker *time.Ticker) *Menu {
+func NewMainApp(ctx context.Context, bot *tgbotapi.BotAPI, domain string, exitChan chan bool, refreshHotlapsTicker, refreshServersTicker *time.Ticker) *MainApp {
 	hotlapsAppMenu := menus.NewApplicationMenu(buttonHotlaps, appName, menuKeyboard)
-	tm := tracks.NewTrackManager(bot, domain, hotlapsAppMenu)
+	hotlapApp := NewHotlapsApp(ctx, bot, domain, hotlapsAppMenu, exitChan, refreshHotlapsTicker)
 
-	serversAppMenu := menus.NewApplicationMenu(buttonLive, appName, menuKeyboard)
-	sm := servers.NewManager(bot, domain, serversAppMenu)
-	accepters := []Accepter{tm, sm}
+	sessionsAppMenu := menus.NewApplicationMenu(buttonSessions, appName, menuKeyboard)
+	sessionsApp := NewSessionsApp(ctx, bot, domain, sessionsAppMenu)
 
-	// start the trackmanager sync process
-	tm.Sync(ctx, refreshHotlapsTicker, exitChan)
-	sm.Sync(ctx, refreshServersTicker, exitChan)
+	liveAppMenu := menus.NewApplicationMenu(buttonLive, appName, menuKeyboard)
+	liveApp := NewLiveApp(ctx, bot, domain, liveAppMenu, exitChan, refreshServersTicker)
 
-	return &Menu{
+	accepters := []Accepter{hotlapApp, sessionsApp, liveApp}
+
+	return &MainApp{
 		bot:       bot,
 		accepters: accepters,
 	}
 }
 
-func (m *Menu) AcceptCommand(command string) (bool, func(ctx context.Context, chatId int64) error) {
+func (m *MainApp) AcceptCommand(command string) (bool, func(ctx context.Context, chatId int64) error) {
 	if command == menuStart {
 		return true, m.renderStart()
 	} else if command == menuMenu {
@@ -67,7 +67,7 @@ func (m *Menu) AcceptCommand(command string) (bool, func(ctx context.Context, ch
 	return false, nil
 }
 
-func (m *Menu) AcceptCallback(query *tgbotapi.CallbackQuery) (bool, func(ctx context.Context, query *tgbotapi.CallbackQuery)) {
+func (m *MainApp) AcceptCallback(query *tgbotapi.CallbackQuery) (bool, func(ctx context.Context, query *tgbotapi.CallbackQuery)) {
 	for _, accepter := range m.accepters {
 		accept, handler := accepter.AcceptCallback(query)
 		if accept {
@@ -78,7 +78,7 @@ func (m *Menu) AcceptCallback(query *tgbotapi.CallbackQuery) (bool, func(ctx con
 	return false, nil
 }
 
-func (m *Menu) AcceptButton(button string) (bool, func(ctx context.Context, chatId int64) error) {
+func (m *MainApp) AcceptButton(button string) (bool, func(ctx context.Context, chatId int64) error) {
 	for _, accepter := range m.accepters {
 		accept, handler := accepter.AcceptButton(button)
 		if accept {
@@ -88,24 +88,24 @@ func (m *Menu) AcceptButton(button string) (bool, func(ctx context.Context, chat
 	return false, nil
 }
 
-func (m *Menu) renderStart() func(ctx context.Context, chatId int64) error {
+func (m *MainApp) renderStart() func(ctx context.Context, chatId int64) error {
 	return func(ctx context.Context, chatId int64) error {
 		message := "Hola, soy el bot de F1Champs que permite ver las Hotlaps registradas y sesiones en curso.\n\n"
 		message += "Puedes usar el siguiente comando:\n\n"
 		message += fmt.Sprintf("%s - Muestra el menú del bot\n", menuMenu)
 		msg := tgbotapi.NewMessage(chatId, message)
 		msg.ReplyMarkup = menuKeyboard
-		_, err := bot.Send(msg)
+		_, err := m.bot.Send(msg)
 		return err
 	}
 }
 
-func (m *Menu) renderMenu() func(ctx context.Context, chatId int64) error {
+func (m *MainApp) renderMenu() func(ctx context.Context, chatId int64) error {
 	return func(ctx context.Context, chatId int64) error {
 		message := "Menú del bot.\n\n"
 		msg := tgbotapi.NewMessage(chatId, message)
 		msg.ReplyMarkup = menuKeyboard
-		_, err := bot.Send(msg)
+		_, err := m.bot.Send(msg)
 		return err
 	}
 }

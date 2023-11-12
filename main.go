@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"f1champshotlapsbot/apps"
 	"log"
 	"os"
 	"os/signal"
@@ -17,17 +18,10 @@ const (
 	EnvHotlapsDomain = "API_DOMAIN"
 )
 
-type Accepter interface {
-	AcceptCommand(command string) (bool, func(ctx context.Context, chatId int64) error)
-	AcceptButton(button string) (bool, func(ctx context.Context, chatId int64) error)
-	AcceptCallback(query *tgbotapi.CallbackQuery) (bool, func(ctx context.Context, query *tgbotapi.CallbackQuery))
-}
-
 var (
-	domain   = ""
-	m        *Menu
-	bot      *tgbotapi.BotAPI
-	accepter Accepter
+	domain = ""
+	bot    *tgbotapi.BotAPI
+	app    apps.Accepter
 )
 
 func main() {
@@ -74,9 +68,9 @@ func main() {
 	exitChan := make(chan bool)
 	refreshHotlapsTicker := time.NewTicker(60 * time.Minute)
 	refreshServersTicker := time.NewTicker(5 * time.Minute)
-	m = NewMenu(ctx, bot, domain, exitChan, refreshHotlapsTicker, refreshServersTicker)
-	// Register menu the accepter
-	accepter = m
+
+	// build the main app
+	app = apps.NewMainApp(ctx, bot, domain, exitChan, refreshHotlapsTicker, refreshServersTicker)
 
 	// Tell the user the bot is online
 	log.Println("Start listening for updates. Press Ctrl-C to stop it")
@@ -146,12 +140,7 @@ func MessageHandler(ctx context.Context, message *tgbotapi.Message) {
 
 // When we get a button clicked, we react accordingly
 func handleButton(ctx context.Context, chatId int64, button string) error {
-	// for _, accepter := range accepters {
-	// 	if accept, handler := accepter.AcceptButton(button); accept {
-	// 		return handler(ctx, chatId)
-	// 	}
-	// }
-	if accept, handler := accepter.AcceptButton(button); accept {
+	if accept, handler := app.AcceptButton(button); accept {
 		return handler(ctx, chatId)
 	}
 	return nil
@@ -159,25 +148,14 @@ func handleButton(ctx context.Context, chatId int64, button string) error {
 
 // When we get a command, we react accordingly
 func handleCommand(ctx context.Context, chatId int64, command string) error {
-	// for _, accepter := range accepters {
-	// 	if accept, handler := accepter.AcceptCommand(command); accept {
-	// 		return handler(ctx, chatId)
-	// 	}
-	// }
-	if accept, handler := accepter.AcceptCommand(command); accept {
+	if accept, handler := app.AcceptCommand(command); accept {
 		return handler(ctx, chatId)
 	}
 	return nil
 }
 
 func CallbackQueryHandler(ctx context.Context, query *tgbotapi.CallbackQuery) {
-	// for _, accepter := range accepters {
-	// 	if accept, handler := accepter.AcceptCallback(query); accept {
-	// 		handler(ctx, query)
-	// 		return
-	// 	}
-	// }
-	if accept, handler := accepter.AcceptCallback(query); accept {
+	if accept, handler := app.AcceptCallback(query); accept {
 		handler(ctx, query)
 	}
 }

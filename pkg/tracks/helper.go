@@ -2,6 +2,7 @@ package tracks
 
 import (
 	"fmt"
+	"hash/fnv"
 	"strings"
 )
 
@@ -41,4 +42,11 @@ func getDriverCodeName(name string) string {
 		}
 	}
 	return strings.ToUpper(code)
+}
+
+// convert name to a hash with a limit of 15 characters
+func toID(name string) string {
+	h := fnv.New32a()
+	h.Write([]byte(name))
+	return fmt.Sprint(h.Sum32())
 }

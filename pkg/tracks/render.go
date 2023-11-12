@@ -9,7 +9,7 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-func (tm *Manager) renderShowTracksCallback(data []string) func(ctx context.Context, query *tgbotapi.CallbackQuery) {
+func (tm *Manager) RenderShowTracksCallback(data []string) func(ctx context.Context, query *tgbotapi.CallbackQuery) {
 	return func(ctx context.Context, query *tgbotapi.CallbackQuery) {
 		tracks, err := tm.GetTracks(ctx)
 		if err != nil {
@@ -27,13 +27,13 @@ func (tm *Manager) renderShowTracksCallback(data []string) func(ctx context.Cont
 	}
 }
 
-func (tm *Manager) renderSessionsCallback(data []string) func(ctx context.Context, query *tgbotapi.CallbackQuery) {
+func (tm *Manager) RenderSessionsCallback(data []string) func(ctx context.Context, query *tgbotapi.CallbackQuery) {
 	return func(ctx context.Context, query *tgbotapi.CallbackQuery) {
 		HandleSessionDataCallbackQuery(query.Message.Chat.ID, &query.Message.MessageID, tm, data[1:]...)
 	}
 }
 
-func (tm *Manager) renderTracks() func(ctx context.Context, chatId int64) error {
+func (tm *Manager) RenderTracks() func(ctx context.Context, chatId int64) error {
 	return func(ctx context.Context, chatId int64) error {
 		tracks, err := tm.GetTracks(ctx)
 		if err != nil {
@@ -55,11 +55,11 @@ func (tm *Manager) renderTracks() func(ctx context.Context, chatId int64) error 
 	}
 }
 
-func (tm *Manager) renderCategoriesForTrackId(trackId int) func(ctx context.Context, chatId int64) error {
+func (tm *Manager) RenderCategoriesForTrackId(trackId int) func(ctx context.Context, chatId int64) error {
 	return func(ctx context.Context, chatId int64) error {
 		track, found := tm.GetTrackByID(fmt.Sprint(trackId))
 		if !found {
-			return tm.renderTrackNotFound(chatId)
+			return tm.RenderTrackNotFound(chatId)
 		}
 		cats, err := track.GetCategories(ctx, tm.apiDomain)
 		if err != nil {
@@ -84,11 +84,11 @@ func (tm *Manager) renderCategoriesForTrackId(trackId int) func(ctx context.Cont
 	}
 }
 
-func (tm *Manager) renderSessionForCategoryAndTrack(trackId string, categoryId string) func(ctx context.Context, chatId int64) error {
+func (tm *Manager) RenderSessionForCategoryAndTrack(trackId string, categoryId string) func(ctx context.Context, chatId int64) error {
 	return func(ctx context.Context, chatId int64) error {
 		t, found := tm.GetTrackByID(trackId)
 		if !found {
-			return tm.renderTrackNotFound(chatId)
+			return tm.RenderTrackNotFound(chatId)
 		}
 		_, _ = t.GetCategories(ctx, tm.apiDomain)
 
@@ -100,14 +100,14 @@ func (tm *Manager) renderSessionForCategoryAndTrack(trackId string, categoryId s
 	}
 }
 
-func (tm *Manager) renderTrackNotFound(chatId int64) error {
-	message := fmt.Sprintf("El circuito seleccionado no se ha encontrado. Vuelve a listarlos con %s", MenuTracks)
+func (tm *Manager) RenderTrackNotFound(chatId int64) error {
+	message := fmt.Sprintf("El circuito seleccionado no se ha encontrado. Vuelve a  y prueba otra vez")
 	msg := tgbotapi.NewMessage(chatId, message)
 	_, err := tm.bot.Send(msg)
 	return err
 }
 
-func (tm *Manager) renderCurrentSession() func(ctx context.Context, chatId int64) error {
+func (tm *Manager) RenderCurrentSession() func(ctx context.Context, chatId int64) error {
 	return func(ctx context.Context, chatId int64) error {
 		tracks, err := tm.GetTracks(ctx)
 		if err != nil {
@@ -143,7 +143,7 @@ func (tm *Manager) renderCurrentSession() func(ctx context.Context, chatId int64
 						}
 					}
 				}
-				return tm.renderSessionForCategoryAndTrack(track.ID, selectedCat.ID)(ctx, chatId)
+				return tm.RenderSessionForCategoryAndTrack(track.ID, selectedCat.ID)(ctx, chatId)
 			} else {
 				message := "No hay sesiones disponibles"
 				msg := tgbotapi.NewMessage(chatId, message)

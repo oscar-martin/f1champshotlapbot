@@ -2,6 +2,7 @@ package servers
 
 import (
 	"context"
+	"f1champshotlapsbot/pkg/menus"
 	"fmt"
 	"regexp"
 	"sync"
@@ -14,6 +15,7 @@ var (
 	serverPrefixCommand = "/server"
 	MenuLive            = "/directo"
 	ButtonLive          = "Live"
+	menuKeyboard        tgbotapi.ReplyKeyboardMarkup
 )
 
 type Manager struct {
@@ -21,12 +23,23 @@ type Manager struct {
 	apiDomain string
 	servers   []Server
 	bot       *tgbotapi.BotAPI
+	appMenu   menus.ApplicationMenu
 }
 
-func NewManager(bot *tgbotapi.BotAPI, domain string) *Manager {
+func NewManager(bot *tgbotapi.BotAPI, domain string, appMenu menus.ApplicationMenu) *Manager {
+	menuKeyboard = tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("Server1"),
+			tgbotapi.NewKeyboardButton("Server2"),
+		),
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton(appMenu.ButtonBackTo()),
+		),
+	)
 	return &Manager{
 		apiDomain: domain,
 		bot:       bot,
+		appMenu:   appMenu,
 	}
 }
 
@@ -92,8 +105,22 @@ func (sm *Manager) AcceptCallback(query *tgbotapi.CallbackQuery) (bool, func(ctx
 }
 
 func (sm *Manager) AcceptButton(button string) (bool, func(ctx context.Context, chatId int64) error) {
-	if button == ButtonLive {
-		return sm.AcceptCommand(MenuLive)
+	if button == sm.appMenu.Name {
+		// return sm.AcceptCommand(MenuLive)
+		return true, func(ctx context.Context, chatId int64) error {
+			message := fmt.Sprintf("%s application\n\n", sm.appMenu.Name)
+			msg := tgbotapi.NewMessage(chatId, message)
+			msg.ReplyMarkup = menuKeyboard
+			_, err := sm.bot.Send(msg)
+			return err
+		}
+	} else if button == sm.appMenu.ButtonBackTo() {
+		return true, func(ctx context.Context, chatId int64) error {
+			msg := tgbotapi.NewMessage(chatId, "OK")
+			msg.ReplyMarkup = sm.appMenu.PrevMenu
+			_, err := sm.bot.Send(msg)
+			return err
+		}
 	}
 	return false, nil
 }

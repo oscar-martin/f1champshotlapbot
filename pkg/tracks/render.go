@@ -106,3 +106,56 @@ func (tm *Manager) renderTrackNotFound(chatId int64) error {
 	_, err := tm.bot.Send(msg)
 	return err
 }
+
+func (tm *Manager) renderCurrentSession() func(ctx context.Context, chatId int64) error {
+	return func(ctx context.Context, chatId int64) error {
+		tracks, err := tm.GetTracks(ctx)
+		if err != nil {
+			return err
+		}
+
+		if len(tracks) > 0 {
+			track := tracks[0]
+			cats, err := track.GetCategories(ctx, tm.apiDomain)
+			if err != nil {
+				return err
+			}
+
+			if len(cats) > 0 {
+				selectedCat := Category{}
+				for _, cat := range cats {
+					if len(cat.Sessions) > 0 {
+						selectedCat = cat
+						break
+					}
+				}
+				if len(selectedCat.Sessions) == 0 {
+					message := "No hay sesiones disponibles"
+					msg := tgbotapi.NewMessage(chatId, message)
+					_, err = tm.bot.Send(msg)
+					return err
+				}
+
+				for _, cat := range cats {
+					if len(cat.Sessions) > 0 {
+						if selectedCat.Sessions[0].Time < cat.Sessions[0].Time {
+							selectedCat = cat
+						}
+					}
+				}
+				return tm.renderSessionForCategoryAndTrack(track.ID, selectedCat.ID)(ctx, chatId)
+			} else {
+				message := "No hay sesiones disponibles"
+				msg := tgbotapi.NewMessage(chatId, message)
+				_, err = tm.bot.Send(msg)
+				return err
+			}
+
+		} else {
+			message := "No hay circuitos disponibles"
+			msg := tgbotapi.NewMessage(chatId, message)
+			_, err = tm.bot.Send(msg)
+			return err
+		}
+	}
+}

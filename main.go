@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"f1champshotlapsbot/pkg/servers"
-	"f1champshotlapsbot/pkg/tracks"
 	"log"
 	"os"
 	"os/signal"
@@ -26,20 +24,10 @@ type Accepter interface {
 }
 
 var (
-	domain = ""
-	m      *Menu
-	tm     *tracks.Manager
-	sm     *servers.Manager
-	bot    *tgbotapi.BotAPI
-
-	accepters = []Accepter{}
-
-	menuKeyboard = tgbotapi.NewReplyKeyboard(
-		tgbotapi.NewKeyboardButtonRow(
-			tgbotapi.NewKeyboardButton(tracks.ButtonHotlaps),
-			tgbotapi.NewKeyboardButton(servers.ButtonLive),
-		),
-	)
+	domain   = ""
+	m        *Menu
+	bot      *tgbotapi.BotAPI
+	accepter Accepter
 )
 
 func main() {
@@ -83,25 +71,15 @@ func main() {
 	CreateServers([]int{10001, 10002, 10004})
 	// ---------------------
 
-	m = NewMenu(bot)
-	tm = tracks.NewTrackManager(bot, domain)
-	sm = servers.NewManager(bot, domain)
-
-	// Register the accepters
-	accepters = append(accepters, m)
-	accepters = append(accepters, tm)
-	accepters = append(accepters, sm)
+	exitChan := make(chan bool)
+	refreshHotlapsTicker := time.NewTicker(60 * time.Minute)
+	refreshServersTicker := time.NewTicker(5 * time.Minute)
+	m = NewMenu(ctx, bot, domain, exitChan, refreshHotlapsTicker, refreshServersTicker)
+	// Register menu the accepter
+	accepter = m
 
 	// Tell the user the bot is online
 	log.Println("Start listening for updates. Press Ctrl-C to stop it")
-
-	refreshHotlapsTicker := time.NewTicker(60 * time.Minute)
-	refreshServersTicker := time.NewTicker(5 * time.Minute)
-	exitChan := make(chan bool)
-
-	// start the trackmanager sync process
-	tm.Sync(ctx, refreshHotlapsTicker, exitChan)
-	sm.Sync(ctx, refreshServersTicker, exitChan)
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
@@ -131,8 +109,6 @@ func receiveUpdates(ctx context.Context, updates tgbotapi.UpdatesChannel) {
 }
 
 func handleUpdate(ctx context.Context, update tgbotapi.Update) {
-	tm.Lock()
-	defer tm.Unlock()
 	switch {
 	// Handle messages
 	case update.Message != nil:
@@ -170,29 +146,38 @@ func MessageHandler(ctx context.Context, message *tgbotapi.Message) {
 
 // When we get a button clicked, we react accordingly
 func handleButton(ctx context.Context, chatId int64, button string) error {
-	for _, accepter := range accepters {
-		if accept, handler := accepter.AcceptButton(button); accept {
-			return handler(ctx, chatId)
-		}
+	// for _, accepter := range accepters {
+	// 	if accept, handler := accepter.AcceptButton(button); accept {
+	// 		return handler(ctx, chatId)
+	// 	}
+	// }
+	if accept, handler := accepter.AcceptButton(button); accept {
+		return handler(ctx, chatId)
 	}
 	return nil
 }
 
 // When we get a command, we react accordingly
 func handleCommand(ctx context.Context, chatId int64, command string) error {
-	for _, accepter := range accepters {
-		if accept, handler := accepter.AcceptCommand(command); accept {
-			return handler(ctx, chatId)
-		}
+	// for _, accepter := range accepters {
+	// 	if accept, handler := accepter.AcceptCommand(command); accept {
+	// 		return handler(ctx, chatId)
+	// 	}
+	// }
+	if accept, handler := accepter.AcceptCommand(command); accept {
+		return handler(ctx, chatId)
 	}
 	return nil
 }
 
 func CallbackQueryHandler(ctx context.Context, query *tgbotapi.CallbackQuery) {
-	for _, accepter := range accepters {
-		if accept, handler := accepter.AcceptCallback(query); accept {
-			handler(ctx, query)
-			return
-		}
+	// for _, accepter := range accepters {
+	// 	if accept, handler := accepter.AcceptCallback(query); accept {
+	// 		handler(ctx, query)
+	// 		return
+	// 	}
+	// }
+	if accept, handler := accepter.AcceptCallback(query); accept {
+		handler(ctx, query)
 	}
 }

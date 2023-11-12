@@ -3,6 +3,7 @@ package tracks
 import (
 	"context"
 	"encoding/json"
+	"f1champshotlapsbot/pkg/menus"
 	"fmt"
 	"hash/fnv"
 	"io"
@@ -21,8 +22,10 @@ const (
 )
 
 var (
-	MenuTracks    = "/circuitos"
-	ButtonHotlaps = "Hotlaps"
+	MenuTracks   = "/circuitos"
+	buttonTracks = "Circuitos"
+	buttonActual = "Actual"
+	menuKeyboard tgbotapi.ReplyKeyboardMarkup
 )
 
 type Manager struct {
@@ -30,12 +33,23 @@ type Manager struct {
 	mu        sync.Mutex
 	apiDomain string
 	bot       *tgbotapi.BotAPI
+	appMenu   menus.ApplicationMenu
 }
 
-func NewTrackManager(bot *tgbotapi.BotAPI, domain string) *Manager {
+func NewTrackManager(bot *tgbotapi.BotAPI, domain string, appMenu menus.ApplicationMenu) *Manager {
+	menuKeyboard = tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton(buttonTracks),
+			tgbotapi.NewKeyboardButton(buttonActual),
+		),
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton(appMenu.ButtonBackTo()),
+		),
+	)
 	return &Manager{
 		apiDomain: domain,
 		bot:       bot,
+		appMenu:   appMenu,
 	}
 }
 
@@ -75,8 +89,25 @@ func (tm *Manager) AcceptCommand(command string) (bool, func(ctx context.Context
 }
 
 func (tm *Manager) AcceptButton(button string) (bool, func(ctx context.Context, chatId int64) error) {
-	if button == ButtonHotlaps {
-		return tm.AcceptCommand(MenuTracks)
+	if button == tm.appMenu.Name {
+		return true, func(ctx context.Context, chatId int64) error {
+			message := fmt.Sprintf("%s application\n\n", tm.appMenu.Name)
+			msg := tgbotapi.NewMessage(chatId, message)
+			msg.ReplyMarkup = menuKeyboard
+			_, err := tm.bot.Send(msg)
+			return err
+		}
+	} else if button == tm.appMenu.ButtonBackTo() {
+		return true, func(ctx context.Context, chatId int64) error {
+			msg := tgbotapi.NewMessage(chatId, "OK")
+			msg.ReplyMarkup = tm.appMenu.PrevMenu
+			_, err := tm.bot.Send(msg)
+			return err
+		}
+	} else if button == buttonTracks {
+		return true, tm.renderTracks()
+	} else if button == buttonActual {
+		return true, tm.renderCurrentSession()
 	}
 	return false, nil
 }

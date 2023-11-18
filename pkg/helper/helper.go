@@ -1,4 +1,4 @@
-package tracks
+package helper
 
 import (
 	"fmt"
@@ -7,7 +7,7 @@ import (
 )
 
 // method to convert from seconds to minutes:seconds:milliseconds
-func secondsToMinutes(seconds float64) string {
+func SecondsToMinutes(seconds float64) string {
 	minutes := int(seconds / 60)
 	seconds = seconds - float64(minutes*60)
 	milliseconds := int((seconds - float64(int(seconds))) * 1000)
@@ -15,11 +15,11 @@ func secondsToMinutes(seconds float64) string {
 }
 
 // method to convert to seconds and 3 milliseconds
-func toSectorTime(t float64) string {
+func ToSectorTime(t float64) string {
 	return fmt.Sprintf("%.3f", t)
 }
 
-func getDriverCodeName(name string) string {
+func GetDriverCodeName(name string) string {
 	// this function reads a name with possible surname and will return the first letter of the name and the first 3 letters of the surname
 	// if the name is empty, it will return an empty string
 	if name == "" {
@@ -45,7 +45,7 @@ func getDriverCodeName(name string) string {
 }
 
 // convert name to a hash with a limit of 15 characters
-func toID(name string) string {
+func ToID(name string) string {
 	h := fnv.New32a()
 	h.Write([]byte(name))
 	return fmt.Sprint(h.Sum32())

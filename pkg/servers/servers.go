@@ -113,6 +113,7 @@ func (s Server) GetDriverSessions(ctx context.Context) (DriversSession, error) {
 			CarType:          "Car1",
 			CarClass:         "Class1",
 			Team:             "Team1",
+			Compound:         "Soft",
 			Lapcount:         1,
 			Lapcountcomplete: 1,
 			S1InBestLap:      11.111,
@@ -128,6 +129,7 @@ func (s Server) GetDriverSessions(ctx context.Context) (DriversSession, error) {
 	}
 	return DriversSession{
 		ServerName: s.Name,
+		ServerID:   s.ID,
 		Drivers:    dss,
 	}, nil
 }

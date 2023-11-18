@@ -101,10 +101,25 @@ func (sa *ServerApp) Menu() tgbotapi.ReplyKeyboardMarkup {
 }
 
 func (sa *ServerApp) AcceptCommand(command string) (bool, func(ctx context.Context, chatId int64) error) {
+	for _, accepter := range sa.accepters {
+		accept, handler := accepter.AcceptCommand(command)
+		if accept {
+			return true, handler
+		}
+	}
+
 	return false, nil
+
 }
 
 func (sa *ServerApp) AcceptCallback(query *tgbotapi.CallbackQuery) (bool, func(ctx context.Context, query *tgbotapi.CallbackQuery) error) {
+	for _, accepter := range sa.accepters {
+		accept, handler := accepter.AcceptCallback(query)
+		if accept {
+			return true, handler
+		}
+	}
+
 	return false, nil
 }
 

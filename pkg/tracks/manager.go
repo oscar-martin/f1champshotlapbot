@@ -3,6 +3,7 @@ package tracks
 import (
 	"context"
 	"encoding/json"
+	"f1champshotlapsbot/pkg/helper"
 	"fmt"
 	"io"
 	"net/http"
@@ -114,8 +115,8 @@ func getTracks(ctx context.Context, domain string) ([]*Track, error) {
 	var tracks []*Track
 	for _, trackName := range trackNames {
 		track := Track{
-			Command: "/" + toID(trackName),
-			ID:      toID(trackName),
+			Command: "/" + helper.ToID(trackName),
+			ID:      helper.ToID(trackName),
 			Name:    trackName,
 			mu:      sync.Mutex{},
 		}

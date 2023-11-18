@@ -1,18 +1,43 @@
 package apps
 
 import (
+	"bytes"
 	"context"
 	"f1champshotlapsbot/pkg/caster"
+	"f1champshotlapsbot/pkg/helper"
 	"f1champshotlapsbot/pkg/menus"
 	"f1champshotlapsbot/pkg/pubsub"
 	"f1champshotlapsbot/pkg/servers"
 	"fmt"
+	"log"
+	"strings"
 	"sync"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/jedib0t/go-pretty/v6/table"
 )
 
-const ()
+const (
+	inlineKeyboardTimes    = "Tiempos"
+	inlineKeyboardSectors  = "Sectores"
+	inlineKeyboardCompound = "Gomas"
+	inlineKeyboardLaps     = "Vueltas"
+	inlineKeyboardTeam     = "Coches"
+	inlineKeyboardDriver   = "Pilotos"
+	inlineKeyboardUpdate   = "Actualizar"
+
+	symbolTimes    = "⏱"
+	symbolSectors  = "🔂"
+	symbolCompound = "🛞"
+	symbolLaps     = "🏁"
+	symbolTeam     = "🏎️"
+	symbolDriver   = "👐"
+	symbolUpdate   = "🔄"
+
+	SubcommandShowLiveTiming = "show_live_timing"
+
+	tableDriver = "PIL"
+)
 
 type GridApp struct {
 	bot                      *tgbotapi.BotAPI
@@ -69,6 +94,12 @@ func (ga *GridApp) AcceptCommand(command string) (bool, func(ctx context.Context
 }
 
 func (ga *GridApp) AcceptCallback(query *tgbotapi.CallbackQuery) (bool, func(ctx context.Context, query *tgbotapi.CallbackQuery) error) {
+	data := strings.Split(query.Data, ":")
+	if data[0] == SubcommandShowLiveTiming && data[2] == ga.serverID {
+		return true, func(ctx context.Context, query *tgbotapi.CallbackQuery) error {
+			return ga.HandleSessionDataCallbackQuery(query.Message.Chat.ID, &query.Message.MessageID, data[1:]...)
+		}
+	}
 	return false, nil
 }
 
@@ -78,13 +109,7 @@ func (ga *GridApp) AcceptButton(button string) (bool, func(ctx context.Context, 
 
 	// fmt.Printf("GRID: button: %s. appName: %s\n", button, buttonGrid+" "+ga.driversSession.ServerName)
 	if button == buttonGrid+" "+ga.driversSession.ServerName {
-		return true, func(ctx context.Context, chatId int64) error {
-			message := fmt.Sprintf("%s application\n\nDrivers: %d", ga.appMenu.Name, len(ga.driversSession.Drivers))
-			msg := tgbotapi.NewMessage(chatId, message)
-			msg.ReplyMarkup = ga.menuKeyboard
-			_, err := ga.bot.Send(msg)
-			return err
-		}
+		return true, ga.RenderGrid()
 	} else if button == ga.appMenu.ButtonBackTo() {
 		return true, func(ctx context.Context, chatId int64) error {
 			msg := tgbotapi.NewMessage(chatId, "OK1")
@@ -95,4 +120,111 @@ func (ga *GridApp) AcceptButton(button string) (bool, func(ctx context.Context, 
 	}
 	// fmt.Print("GRID: FALSE\n")
 	return false, nil
+}
+
+func (ga *GridApp) RenderGrid() func(ctx context.Context, chatId int64) error {
+	return func(ctx context.Context, chatId int64) error {
+		ga.mu.Lock()
+		defer ga.mu.Unlock()
+
+		err := ga.SendSessionData(chatId, nil, ga.driversSession, inlineKeyboardTimes)
+		if err != nil {
+			log.Printf("An error occured: %s", err.Error())
+		}
+		return nil
+	}
+}
+
+func (ga *GridApp) HandleSessionDataCallbackQuery(chatId int64, messageId *int, data ...string) error {
+	infoType := data[0]
+	// serverId := data[1]
+	return ga.SendSessionData(chatId, messageId, ga.driversSession, infoType)
+}
+
+func (ga *GridApp) SendSessionData(chatId int64, messageId *int, driversSession servers.DriversSession, infoType string) error {
+	if len(driversSession.Drivers) > 0 {
+		var b bytes.Buffer
+		t := table.NewWriter()
+		t.SetOutputMirror(&b)
+		t.SetStyle(table.StyleRounded)
+		t.AppendSeparator()
+
+		t.AppendHeader(table.Row{tableDriver, infoType})
+		for _, driverStat := range driversSession.Drivers {
+			switch infoType {
+			case inlineKeyboardTimes:
+				t.AppendRow([]interface{}{
+					helper.GetDriverCodeName(driverStat.Driver),
+					helper.SecondsToMinutes(driverStat.Time),
+				})
+			case inlineKeyboardSectors:
+				t.AppendRow([]interface{}{
+					helper.GetDriverCodeName(driverStat.Driver),
+					fmt.Sprintf("%s %s %s", helper.ToSectorTime(driverStat.S1), helper.ToSectorTime(driverStat.S2), helper.ToSectorTime(driverStat.S3)),
+				})
+			case inlineKeyboardCompound:
+				t.AppendRow([]interface{}{
+					helper.GetDriverCodeName(driverStat.Driver),
+					driverStat.Compound,
+				})
+			case inlineKeyboardLaps:
+				t.AppendRow([]interface{}{
+					helper.GetDriverCodeName(driverStat.Driver),
+					fmt.Sprintf("%d/%d", driverStat.Lapcountcomplete, driverStat.Lapcount),
+				})
+			case inlineKeyboardTeam:
+				t.AppendRow([]interface{}{
+					helper.GetDriverCodeName(driverStat.Driver),
+					driverStat.CarClass,
+				})
+			case inlineKeyboardDriver:
+				t.AppendRow([]interface{}{
+					helper.GetDriverCodeName(driverStat.Driver),
+					driverStat.Driver,
+				})
+			}
+		}
+		t.Render()
+
+		keyboard := getInlineKeyboard(driversSession.ServerID)
+		var cfg tgbotapi.Chattable
+		if messageId == nil {
+			msg := tgbotapi.NewMessage(chatId, fmt.Sprintf("```\nTiempos de sesión actual en %q\n\n%s```", driversSession.ServerName, b.String()))
+			msg.ParseMode = tgbotapi.ModeMarkdownV2
+			msg.ReplyMarkup = keyboard
+			cfg = msg
+		} else {
+			msg := tgbotapi.NewEditMessageText(chatId, *messageId, fmt.Sprintf("```\nTiempos de sesión actual en %q\n\n%s```", driversSession.ServerName, b.String()))
+			msg.ParseMode = tgbotapi.ModeMarkdownV2
+			msg.ReplyMarkup = &keyboard
+			cfg = msg
+		}
+		_, err := ga.bot.Send(cfg)
+		return err
+	} else {
+		message := "No hay pilotos en la sesión"
+		msg := tgbotapi.NewMessage(chatId, message)
+		_, err := ga.bot.Send(msg)
+		return err
+	}
+}
+
+func getInlineKeyboard(serverID string) tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardTimes+" "+symbolTimes, fmt.Sprintf("%s:%s:%s", SubcommandShowLiveTiming, inlineKeyboardTimes, serverID)),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardSectors+" "+symbolSectors, fmt.Sprintf("%s:%s:%s", SubcommandShowLiveTiming, inlineKeyboardSectors, serverID)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardCompound+" "+symbolTimes, fmt.Sprintf("%s:%s:%s", SubcommandShowLiveTiming, inlineKeyboardCompound, serverID)),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardLaps+" "+symbolLaps, fmt.Sprintf("%s:%s:%s", SubcommandShowLiveTiming, inlineKeyboardLaps, serverID)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardTeam+" "+symbolTeam, fmt.Sprintf("%s:%s:%s", SubcommandShowLiveTiming, inlineKeyboardTeam, serverID)),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardDriver+" "+symbolDriver, fmt.Sprintf("%s:%s:%s", SubcommandShowLiveTiming, inlineKeyboardDriver, serverID)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardUpdate+" "+symbolUpdate, fmt.Sprintf("%s:%s:%s", SubcommandShowLiveTiming, inlineKeyboardSectors, serverID)),
+		),
+	)
 }

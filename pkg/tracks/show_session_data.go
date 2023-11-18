@@ -2,6 +2,7 @@ package tracks
 
 import (
 	"bytes"
+	"f1champshotlapsbot/pkg/helper"
 	"fmt"
 	"strings"
 
@@ -71,13 +72,13 @@ func SendSessionData(chatId int64, messageId *int, trackId, categoryId, infoType
 			switch infoType {
 			case inlineKeyboardTimes:
 				t.AppendRow([]interface{}{
-					getDriverCodeName(session.Driver),
-					secondsToMinutes(session.Time),
+					helper.GetDriverCodeName(session.Driver),
+					helper.SecondsToMinutes(session.Time),
 				})
 			case inlineKeyboardSectors:
 				t.AppendRow([]interface{}{
-					getDriverCodeName(session.Driver),
-					fmt.Sprintf("%s %s %s", toSectorTime(session.S1), toSectorTime(session.S2), toSectorTime(session.S3)),
+					helper.GetDriverCodeName(session.Driver),
+					fmt.Sprintf("%s %s %s", helper.ToSectorTime(session.S1), helper.ToSectorTime(session.S2), helper.ToSectorTime(session.S3)),
 				})
 			case inlineKeyboardCompound:
 				tyreSlice := strings.Split(session.Fcompound, ",")
@@ -86,27 +87,27 @@ func SendSessionData(chatId int64, messageId *int, trackId, categoryId, infoType
 					tyre = tyreSlice[len(tyreSlice)-1]
 				}
 				t.AppendRow([]interface{}{
-					getDriverCodeName(session.Driver),
+					helper.GetDriverCodeName(session.Driver),
 					tyre,
 				})
 			case inlineKeyboardLaps:
 				t.AppendRow([]interface{}{
-					getDriverCodeName(session.Driver),
+					helper.GetDriverCodeName(session.Driver),
 					fmt.Sprintf("%d/%d", session.Lapcountcomplete, session.Lapcount),
 				})
 			case inlineKeyboardTeam:
 				t.AppendRow([]interface{}{
-					getDriverCodeName(session.Driver),
+					helper.GetDriverCodeName(session.Driver),
 					session.CarClass,
 				})
 			case inlineKeyboardDriver:
 				t.AppendRow([]interface{}{
-					getDriverCodeName(session.Driver),
+					helper.GetDriverCodeName(session.Driver),
 					session.Driver,
 				})
 			case inlineKeyboardDate:
 				t.AppendRow([]interface{}{
-					getDriverCodeName(session.Driver),
+					helper.GetDriverCodeName(session.Driver),
 					session.DateTime,
 				})
 			}

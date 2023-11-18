@@ -5,16 +5,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
-	"os"
-	"sync"
-	"time"
-
-	"log"
 )
 
 const (
 	serverCheckHttpPath = "/"
+	ServerStatusOffline = "🔴"
+	ServerStatusOnline  = "🟢"
+	ServerPrefixCommand = "Server"
+
+	PubSubServersTopic          = "servers"
+	PubSubDriversSessionPreffix = "driversSession-"
 )
 
 type Server struct {
@@ -24,69 +26,44 @@ type Server struct {
 	Online bool
 }
 
-func checkServerOnline(ctx context.Context, server Server) (bool, error) {
-	// try to reach the http server
-	client := &http.Client{Timeout: 5 * time.Second}
-	_, err := client.Get(fmt.Sprintf("%s%s", server.URL, serverCheckHttpPath))
-	if err != nil {
-		// A timeout error occurred
-		// time.Sleep(3 * time.Second)
-		if os.IsTimeout(err) {
-			return false, nil
-		}
-
-		// This was an error, but not a timeout
-		log.Printf("Error checking server %s: %s", server.Name, err.Error())
-		return false, err
-	}
-	return true, nil
-}
-
 func getServers(ctx context.Context, domain string) ([]Server, error) {
 	servers := []Server{
 		{
-			ID:   "1",
-			URL:  "http://localhost:10001",
-			Name: "Server 1",
+			ID:  "Server1",
+			URL: "http://localhost:10001",
 		},
 		{
-			ID:   "2",
-			URL:  "http://localhost:10002",
-			Name: "Server 2",
+			ID:  "Server2",
+			URL: "http://localhost:10002",
 		},
 		{
-			ID:   "3",
-			URL:  "http://localhost:10003",
-			Name: "Server 3",
+			ID:  "Server3",
+			URL: "http://localhost:10003",
 		},
 		{
-			ID:   "4",
-			URL:  "http://localhost:10004",
-			Name: "Server 4",
+			ID:  "Server4",
+			URL: "http://localhost:10004",
 		},
 	}
 
-	wg := sync.WaitGroup{}
 	for i := range servers {
-		wg.Add(1)
-		go func(idx int) {
-			defer wg.Done()
-			online, err := checkServerOnline(ctx, servers[idx])
-			if err != nil {
-				online = false
-				log.Printf("Error checking server %s: %s", servers[idx].Name, err.Error())
-			}
-			servers[idx].Online = online
-		}(i)
+		servers[i].Name = servers[i].ID
 	}
-	wg.Wait()
 	return servers, nil
 }
 
-func (s Server) CommandString(commandPrefix string) string {
-	status := "🔴"
+func (s Server) StatusAndName() string {
+	status := ServerStatusOffline
 	if s.Online {
-		status = "🟢"
+		status = ServerStatusOnline
+	}
+	return fmt.Sprintf("%s %s", status, s.Name)
+}
+
+func (s Server) CommandString(commandPrefix string) string {
+	status := ServerStatusOffline
+	if s.Online {
+		status = ServerStatusOnline
 	}
 	return fmt.Sprintf(" ▸ %s %s ➡ %s_%s", status, s.Name, commandPrefix, s.ID)
 }
@@ -122,4 +99,35 @@ func (s Server) GetSessionInfo(ctx context.Context) (SessionInfo, error) {
 	}
 
 	return sessionInfo, nil
+}
+
+func (s Server) GetDriverSessions(ctx context.Context) (DriversSession, error) {
+	dss := []DriverSession{}
+	for i := 0; i < rand.Intn(15); i++ {
+		dss = append(dss, DriverSession{
+			Driver:           "Driver1",
+			S1:               11.111,
+			S2:               22.222,
+			S3:               33.333,
+			Time:             81.111,
+			CarType:          "Car1",
+			CarClass:         "Class1",
+			Team:             "Team1",
+			Lapcount:         1,
+			Lapcountcomplete: 1,
+			S1InBestLap:      11.111,
+			S2InBestLap:      22.222,
+			S3InBestLap:      33.333,
+			BestLap:          81.111,
+			BestS1:           11.111,
+			BestS2:           22.222,
+			BestS3:           33.333,
+			OptimumLap:       81.111,
+			MaxSpeed:         111.1,
+		})
+	}
+	return DriversSession{
+		ServerName: s.Name,
+		Drivers:    dss,
+	}, nil
 }

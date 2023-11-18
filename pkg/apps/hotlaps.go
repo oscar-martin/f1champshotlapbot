@@ -65,7 +65,7 @@ func (hl *HotlapsApp) AcceptCommand(command string) (bool, func(ctx context.Cont
 	return false, nil
 }
 
-func (hl *HotlapsApp) AcceptCallback(query *tgbotapi.CallbackQuery) (bool, func(ctx context.Context, query *tgbotapi.CallbackQuery)) {
+func (hl *HotlapsApp) AcceptCallback(query *tgbotapi.CallbackQuery) (bool, func(ctx context.Context, query *tgbotapi.CallbackQuery) error) {
 	data := strings.Split(query.Data, ":")
 	if data[0] == tracks.SubcommandShowTracks {
 		return true, hl.tm.RenderShowTracksCallback(data)
@@ -76,6 +76,7 @@ func (hl *HotlapsApp) AcceptCallback(query *tgbotapi.CallbackQuery) (bool, func(
 }
 
 func (hl *HotlapsApp) AcceptButton(button string) (bool, func(ctx context.Context, chatId int64) error) {
+	// fmt.Printf("HOTLAP: button: %s. appName: %s\n", button, hl.appMenu.Name)
 	if button == hl.appMenu.Name {
 		return true, func(ctx context.Context, chatId int64) error {
 			message := fmt.Sprintf("%s application\n\n", hl.appMenu.Name)
@@ -87,7 +88,7 @@ func (hl *HotlapsApp) AcceptButton(button string) (bool, func(ctx context.Contex
 	} else if button == hl.appMenu.ButtonBackTo() {
 		return true, func(ctx context.Context, chatId int64) error {
 			msg := tgbotapi.NewMessage(chatId, "OK")
-			msg.ReplyMarkup = hl.appMenu.PrevMenu
+			msg.ReplyMarkup = hl.appMenu.PrevMenu()
 			_, err := hl.bot.Send(msg)
 			return err
 		}
@@ -96,5 +97,6 @@ func (hl *HotlapsApp) AcceptButton(button string) (bool, func(ctx context.Contex
 	} else if button == buttonActual {
 		return true, hl.tm.RenderCurrentSession()
 	}
+	// fmt.Print("HOTLAP: FALSE\n")
 	return false, nil
 }

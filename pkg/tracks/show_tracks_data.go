@@ -52,7 +52,7 @@ func TracksTextMarkup(currentPage, count, maxPages int, tm *Manager) (text strin
 	return
 }
 
-func HandleTrackDataCallbackQuery(chatId int64, messageId, maxPages int, tm *Manager, data ...string) {
+func HandleTrackDataCallbackQuery(chatId int64, messageId, maxPages int, tm *Manager, data ...string) error {
 	pagerType := data[0]
 	currentPage, _ := strconv.Atoi(data[1])
 	itemsPerPage, _ := strconv.Atoi(data[2])
@@ -60,19 +60,20 @@ func HandleTrackDataCallbackQuery(chatId int64, messageId, maxPages int, tm *Man
 	if pagerType == "next" {
 		nextPage := currentPage + 1
 		if nextPage < maxPages {
-			_ = SendTracksData(chatId, nextPage, itemsPerPage, maxPages, &messageId, tm)
+			return SendTracksData(chatId, nextPage, itemsPerPage, maxPages, &messageId, tm)
 		}
 	}
 	if pagerType == "prev" {
 		previousPage := currentPage - 1
 		if previousPage >= 0 {
-			_ = SendTracksData(chatId, previousPage, itemsPerPage, maxPages, &messageId, tm)
+			return SendTracksData(chatId, previousPage, itemsPerPage, maxPages, &messageId, tm)
 		}
 	}
 	if pagerType == "init" {
-		_ = SendTracksData(chatId, 0, itemsPerPage, maxPages, &messageId, tm)
+		return SendTracksData(chatId, 0, itemsPerPage, maxPages, &messageId, tm)
 	}
 	if pagerType == "end" {
-		_ = SendTracksData(chatId, maxPages-1, itemsPerPage, maxPages, &messageId, tm)
+		return SendTracksData(chatId, maxPages-1, itemsPerPage, maxPages, &messageId, tm)
 	}
+	return nil
 }

@@ -9,27 +9,24 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-func (tm *Manager) RenderShowTracksCallback(data []string) func(ctx context.Context, query *tgbotapi.CallbackQuery) {
-	return func(ctx context.Context, query *tgbotapi.CallbackQuery) {
+func (tm *Manager) RenderShowTracksCallback(data []string) func(ctx context.Context, query *tgbotapi.CallbackQuery) error {
+	return func(ctx context.Context, query *tgbotapi.CallbackQuery) error {
 		tracks, err := tm.GetTracks(ctx)
 		if err != nil {
 			log.Printf("An error occured: %s", err.Error())
 			message := "No hay circuitos disponibles"
 			msg := tgbotapi.NewMessage(query.Message.Chat.ID, message)
 			_, err = tm.bot.Send(msg)
-			if err != nil {
-				log.Printf("An error occured: %s", err.Error())
-			}
-			return
+			return err
 		}
 		maxPages := len(tracks) / tracksPerPage
-		HandleTrackDataCallbackQuery(query.Message.Chat.ID, query.Message.MessageID, maxPages, tm, data[1:]...)
+		return HandleTrackDataCallbackQuery(query.Message.Chat.ID, query.Message.MessageID, maxPages, tm, data[1:]...)
 	}
 }
 
-func (tm *Manager) RenderSessionsCallback(data []string) func(ctx context.Context, query *tgbotapi.CallbackQuery) {
-	return func(ctx context.Context, query *tgbotapi.CallbackQuery) {
-		HandleSessionDataCallbackQuery(query.Message.Chat.ID, &query.Message.MessageID, tm, data[1:]...)
+func (tm *Manager) RenderSessionsCallback(data []string) func(ctx context.Context, query *tgbotapi.CallbackQuery) error {
+	return func(ctx context.Context, query *tgbotapi.CallbackQuery) error {
+		return HandleSessionDataCallbackQuery(query.Message.Chat.ID, &query.Message.MessageID, tm, data[1:]...)
 	}
 }
 

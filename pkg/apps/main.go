@@ -3,6 +3,7 @@ package apps
 import (
 	"context"
 	"f1champshotlapsbot/pkg/menus"
+	"f1champshotlapsbot/pkg/pubsub"
 	"fmt"
 	"time"
 
@@ -28,26 +29,34 @@ var (
 	)
 )
 
+type menuer struct{}
+
+func (m menuer) Menu() tgbotapi.ReplyKeyboardMarkup {
+	return menuKeyboard
+}
+
 type MainApp struct {
 	bot       *tgbotapi.BotAPI
 	accepters []Accepter
+	pubsubMgr *pubsub.PubSub
 }
 
-func NewMainApp(ctx context.Context, bot *tgbotapi.BotAPI, domain string, exitChan chan bool, refreshHotlapsTicker, refreshServersTicker *time.Ticker) *MainApp {
-	hotlapsAppMenu := menus.NewApplicationMenu(buttonHotlaps, appName, menuKeyboard)
+func NewMainApp(ctx context.Context, bot *tgbotapi.BotAPI, domain string, pubsubMgr *pubsub.PubSub, exitChan chan bool, refreshHotlapsTicker, refreshServersTicker *time.Ticker) *MainApp {
+	hotlapsAppMenu := menus.NewApplicationMenu(buttonHotlaps, appName, menuer{})
 	hotlapApp := NewHotlapsApp(ctx, bot, domain, hotlapsAppMenu, exitChan, refreshHotlapsTicker)
 
-	sessionsAppMenu := menus.NewApplicationMenu(buttonSessions, appName, menuKeyboard)
+	sessionsAppMenu := menus.NewApplicationMenu(buttonSessions, appName, menuer{})
 	sessionsApp := NewSessionsApp(ctx, bot, domain, sessionsAppMenu)
 
-	liveAppMenu := menus.NewApplicationMenu(buttonLive, appName, menuKeyboard)
-	liveApp := NewLiveApp(ctx, bot, domain, liveAppMenu, exitChan, refreshServersTicker)
+	liveAppMenu := menus.NewApplicationMenu(buttonLive, appName, menuer{})
+	liveApp := NewLiveApp(ctx, bot, domain, pubsubMgr, liveAppMenu, exitChan, refreshServersTicker)
 
 	accepters := []Accepter{hotlapApp, sessionsApp, liveApp}
 
 	return &MainApp{
 		bot:       bot,
 		accepters: accepters,
+		pubsubMgr: pubsubMgr,
 	}
 }
 
@@ -67,7 +76,7 @@ func (m *MainApp) AcceptCommand(command string) (bool, func(ctx context.Context,
 	return false, nil
 }
 
-func (m *MainApp) AcceptCallback(query *tgbotapi.CallbackQuery) (bool, func(ctx context.Context, query *tgbotapi.CallbackQuery)) {
+func (m *MainApp) AcceptCallback(query *tgbotapi.CallbackQuery) (bool, func(ctx context.Context, query *tgbotapi.CallbackQuery) error) {
 	for _, accepter := range m.accepters {
 		accept, handler := accepter.AcceptCallback(query)
 		if accept {

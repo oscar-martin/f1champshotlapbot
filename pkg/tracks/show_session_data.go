@@ -3,7 +3,6 @@ package tracks
 import (
 	"bytes"
 	"fmt"
-	"log"
 	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -33,14 +32,11 @@ const (
 	tableDriver = "PIL"
 )
 
-func HandleSessionDataCallbackQuery(chatId int64, messageId *int, tm *Manager, data ...string) {
+func HandleSessionDataCallbackQuery(chatId int64, messageId *int, tm *Manager, data ...string) error {
 	infoType := data[0]
 	trackId := data[1]
 	categoryId := data[2]
-	err := SendSessionData(chatId, messageId, trackId, categoryId, infoType, tm)
-	if err != nil {
-		log.Printf("An error occured: %s", err.Error())
-	}
+	return SendSessionData(chatId, messageId, trackId, categoryId, infoType, tm)
 }
 
 func SendSessionData(chatId int64, messageId *int, trackId, categoryId, infoType string, tm *Manager) error {

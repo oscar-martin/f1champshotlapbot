@@ -12,6 +12,8 @@ type RaceCompletion struct {
 }
 
 type SessionInfo struct {
+	Online             bool           `json:"online,omitempty"`
+	ServerID           string         `json:"serverID,omitempty"`
 	TrackName          string         `json:"trackName"`
 	Session            string         `json:"session"`
 	CurrentEventTime   int            `json:"currentEventTime"`

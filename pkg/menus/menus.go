@@ -8,20 +8,28 @@ var (
 	buttonBackTo = "Back to"
 )
 
-type ApplicationMenu struct {
-	Name     string
-	From     string
-	PrevMenu tgbotapi.ReplyKeyboardMarkup
+type Menuer interface {
+	Menu() tgbotapi.ReplyKeyboardMarkup
 }
 
-func NewApplicationMenu(name, from string, prevMenu tgbotapi.ReplyKeyboardMarkup) ApplicationMenu {
+type ApplicationMenu struct {
+	Name       string
+	From       string
+	prevMenuer Menuer
+}
+
+func NewApplicationMenu(name, from string, prevMenuer Menuer) ApplicationMenu {
 	return ApplicationMenu{
-		Name:     name,
-		From:     from,
-		PrevMenu: prevMenu,
+		Name:       name,
+		From:       from,
+		prevMenuer: prevMenuer,
 	}
 }
 
 func (am *ApplicationMenu) ButtonBackTo() string {
 	return buttonBackTo + " " + am.From
+}
+
+func (am *ApplicationMenu) PrevMenu() tgbotapi.ReplyKeyboardMarkup {
+	return am.prevMenuer.Menu()
 }

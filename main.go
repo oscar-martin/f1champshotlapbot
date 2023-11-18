@@ -2,13 +2,15 @@ package main
 
 import (
 	"context"
-	"f1champshotlapsbot/apps"
+	"f1champshotlapsbot/pkg/apps"
 	"log"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
+
+	"f1champshotlapsbot/pkg/pubsub"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -19,9 +21,10 @@ const (
 )
 
 var (
-	domain = ""
-	bot    *tgbotapi.BotAPI
-	app    apps.Accepter
+	domain    = ""
+	bot       *tgbotapi.BotAPI
+	app       apps.Accepter
+	pubsubMgr *pubsub.PubSub
 )
 
 func main() {
@@ -43,6 +46,8 @@ func main() {
 		// Abort if something is wrong
 		log.Panic(err)
 	}
+
+	pubsubMgr = pubsub.NewPubSub()
 
 	// Set this to true to log all interactions with telegram servers
 	bot.Debug = false
@@ -67,10 +72,10 @@ func main() {
 
 	exitChan := make(chan bool)
 	refreshHotlapsTicker := time.NewTicker(60 * time.Minute)
-	refreshServersTicker := time.NewTicker(5 * time.Minute)
+	refreshServersTicker := time.NewTicker(10 * time.Second)
 
 	// build the main app
-	app = apps.NewMainApp(ctx, bot, domain, exitChan, refreshHotlapsTicker, refreshServersTicker)
+	app = apps.NewMainApp(ctx, bot, domain, pubsubMgr, exitChan, refreshHotlapsTicker, refreshServersTicker)
 
 	// Tell the user the bot is online
 	log.Println("Start listening for updates. Press Ctrl-C to stop it")
@@ -109,7 +114,10 @@ func handleUpdate(ctx context.Context, update tgbotapi.Update) {
 		MessageHandler(ctx, update.Message)
 	// Handle button clicks
 	case update.CallbackQuery != nil:
-		CallbackQueryHandler(ctx, update.CallbackQuery)
+		err := CallbackQueryHandler(ctx, update.CallbackQuery)
+		if err != nil {
+			log.Printf("An error occured: %s", err.Error())
+		}
 	}
 }
 
@@ -154,8 +162,9 @@ func handleCommand(ctx context.Context, chatId int64, command string) error {
 	return nil
 }
 
-func CallbackQueryHandler(ctx context.Context, query *tgbotapi.CallbackQuery) {
+func CallbackQueryHandler(ctx context.Context, query *tgbotapi.CallbackQuery) error {
 	if accept, handler := app.AcceptCallback(query); accept {
-		handler(ctx, query)
+		return handler(ctx, query)
 	}
+	return nil
 }

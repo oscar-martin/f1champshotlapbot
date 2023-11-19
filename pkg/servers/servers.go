@@ -17,6 +17,7 @@ const (
 
 	PubSubServersTopic          = "servers"
 	PubSubDriversSessionPreffix = "driversSession-"
+	PubSubStintDataPreffix      = "stintData-"
 )
 
 type Server struct {
@@ -103,9 +104,11 @@ func (s Server) GetSessionInfo(ctx context.Context) (SessionInfo, error) {
 
 func (s Server) GetDriverSessions(ctx context.Context) (DriversSession, error) {
 	dss := []DriverSession{}
-	for i := 0; i < rand.Intn(15); i++ {
+	drivers := rand.Intn(10) + 5
+	for i := 0; i < drivers; i++ {
 		dss = append(dss, DriverSession{
-			Driver:           "Driver1",
+			Driver:           "Driver Player" + fmt.Sprintf("%d", i+1),
+			Diff:             4.444,
 			S1:               11.111,
 			S2:               22.222,
 			S3:               33.333,
@@ -128,6 +131,40 @@ func (s Server) GetDriverSessions(ctx context.Context) (DriversSession, error) {
 		})
 	}
 	return DriversSession{
+		ServerName: s.Name,
+		ServerID:   s.ID,
+		Drivers:    dss,
+	}, nil
+}
+
+func (s Server) GetStintData(ctx context.Context) (StintData, error) {
+	dss := map[string]DriverStint{}
+	drivers := rand.Intn(10) + 5
+	for i := 0; i < drivers; i++ {
+		lapsCount := rand.Intn(10) + 5
+		laps := []LapTime{}
+		for j := 0; j < lapsCount; j++ {
+			laps = append(laps, LapTime{
+				LapTime:  81.111,
+				S1:       11.111,
+				S2:       22.222,
+				S3:       33.333,
+				MaxSpeed: 111.1,
+				Diff:     4.444,
+			})
+		}
+		ds := DriverStint{
+			Driver:     "Driver Player" + fmt.Sprintf("%d", i+1),
+			Laps:       laps,
+			OptimumLap: laps[2],
+			BestLap:    laps[1],
+			CarType:    "Car1",
+			CarClass:   "Class1",
+			Team:       "Team1",
+		}
+		dss[ds.Driver] = ds
+	}
+	return StintData{
 		ServerName: s.Name,
 		ServerID:   s.ID,
 		Drivers:    dss,

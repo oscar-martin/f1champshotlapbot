@@ -25,6 +25,8 @@ const (
 	inlineKeyboardTeam     = "Coches"
 	inlineKeyboardDriver   = "Pilotos"
 	inlineKeyboardUpdate   = "Actualizar"
+	inlineKeyboardDiff     = "Diferencia"
+	inlineKeyboardMaxSpeed = "Máx. Vel"
 
 	symbolTimes    = "⏱"
 	symbolSectors  = "🔂"
@@ -33,6 +35,8 @@ const (
 	symbolTeam     = "🏎️"
 	symbolDriver   = "👐"
 	symbolUpdate   = "🔄"
+	symbolDiff     = "⏲️"
+	symbolMaxSpeed = "🚀"
 
 	SubcommandShowLiveTiming = "show_live_timing"
 
@@ -73,7 +77,7 @@ func NewGridApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, pubsubMgr *
 
 func (ga *GridApp) updater() {
 	for payload := range ga.driversSessionUpdateChan {
-		fmt.Println("Updating DriverSessions")
+		// fmt.Println("Updating DriverSessions")
 		dss, err := ga.caster.From(payload)
 		if err != nil {
 			fmt.Printf("Error casting DriverSessions: %s\n", err.Error())
@@ -96,8 +100,10 @@ func (ga *GridApp) AcceptCommand(command string) (bool, func(ctx context.Context
 func (ga *GridApp) AcceptCallback(query *tgbotapi.CallbackQuery) (bool, func(ctx context.Context, query *tgbotapi.CallbackQuery) error) {
 	data := strings.Split(query.Data, ":")
 	if data[0] == SubcommandShowLiveTiming && data[2] == ga.serverID {
+		ga.mu.Lock()
+		defer ga.mu.Unlock()
 		return true, func(ctx context.Context, query *tgbotapi.CallbackQuery) error {
-			return ga.HandleSessionDataCallbackQuery(query.Message.Chat.ID, &query.Message.MessageID, data[1:]...)
+			return ga.handleSessionDataCallbackQuery(query.Message.Chat.ID, &query.Message.MessageID, data[1:]...)
 		}
 	}
 	return false, nil
@@ -112,7 +118,7 @@ func (ga *GridApp) AcceptButton(button string) (bool, func(ctx context.Context, 
 		return true, ga.RenderGrid()
 	} else if button == ga.appMenu.ButtonBackTo() {
 		return true, func(ctx context.Context, chatId int64) error {
-			msg := tgbotapi.NewMessage(chatId, "OK1")
+			msg := tgbotapi.NewMessage(chatId, "OK")
 			msg.ReplyMarkup = ga.appMenu.PrevMenu()
 			_, err := ga.bot.Send(msg)
 			return err
@@ -124,9 +130,6 @@ func (ga *GridApp) AcceptButton(button string) (bool, func(ctx context.Context, 
 
 func (ga *GridApp) RenderGrid() func(ctx context.Context, chatId int64) error {
 	return func(ctx context.Context, chatId int64) error {
-		ga.mu.Lock()
-		defer ga.mu.Unlock()
-
 		err := ga.SendSessionData(chatId, nil, ga.driversSession, inlineKeyboardTimes)
 		if err != nil {
 			log.Printf("An error occured: %s", err.Error())
@@ -135,9 +138,8 @@ func (ga *GridApp) RenderGrid() func(ctx context.Context, chatId int64) error {
 	}
 }
 
-func (ga *GridApp) HandleSessionDataCallbackQuery(chatId int64, messageId *int, data ...string) error {
+func (ga *GridApp) handleSessionDataCallbackQuery(chatId int64, messageId *int, data ...string) error {
 	infoType := data[0]
-	// serverId := data[1]
 	return ga.SendSessionData(chatId, messageId, ga.driversSession, infoType)
 }
 
@@ -182,6 +184,11 @@ func (ga *GridApp) SendSessionData(chatId int64, messageId *int, driversSession 
 					helper.GetDriverCodeName(driverStat.Driver),
 					driverStat.Driver,
 				})
+			case inlineKeyboardDiff:
+				t.AppendRow([]interface{}{
+					helper.GetDriverCodeName(driverStat.Driver),
+					fmt.Sprintf("%.1fs", driverStat.Diff),
+				})
 			}
 		}
 		t.Render()
@@ -189,12 +196,12 @@ func (ga *GridApp) SendSessionData(chatId int64, messageId *int, driversSession 
 		keyboard := getInlineKeyboard(driversSession.ServerID)
 		var cfg tgbotapi.Chattable
 		if messageId == nil {
-			msg := tgbotapi.NewMessage(chatId, fmt.Sprintf("```\nTiempos de sesión actual en %q\n\n%s```", driversSession.ServerName, b.String()))
+			msg := tgbotapi.NewMessage(chatId, fmt.Sprintf("```\nDatos de la sesión actual en %q\n\n%s```", driversSession.ServerName, b.String()))
 			msg.ParseMode = tgbotapi.ModeMarkdownV2
 			msg.ReplyMarkup = keyboard
 			cfg = msg
 		} else {
-			msg := tgbotapi.NewEditMessageText(chatId, *messageId, fmt.Sprintf("```\nTiempos de sesión actual en %q\n\n%s```", driversSession.ServerName, b.String()))
+			msg := tgbotapi.NewEditMessageText(chatId, *messageId, fmt.Sprintf("```\nDatos de la sesión actual en %q\n\n%s```", driversSession.ServerName, b.String()))
 			msg.ParseMode = tgbotapi.ModeMarkdownV2
 			msg.ReplyMarkup = &keyboard
 			cfg = msg
@@ -213,6 +220,7 @@ func getInlineKeyboard(serverID string) tgbotapi.InlineKeyboardMarkup {
 	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardTimes+" "+symbolTimes, fmt.Sprintf("%s:%s:%s", SubcommandShowLiveTiming, inlineKeyboardTimes, serverID)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardDiff+" "+symbolDiff, fmt.Sprintf("%s:%s:%s", SubcommandShowLiveTiming, inlineKeyboardDiff, serverID)),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardSectors+" "+symbolSectors, fmt.Sprintf("%s:%s:%s", SubcommandShowLiveTiming, inlineKeyboardSectors, serverID)),

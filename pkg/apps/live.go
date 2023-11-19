@@ -79,7 +79,7 @@ func (la *LiveApp) update(ss []servers.Server) {
 
 func (la *LiveApp) updater() {
 	for payload := range la.serversUpdateChan {
-		fmt.Println("Updating servers statuses")
+		// fmt.Println("Updating servers statuses")
 		ss, err := la.caster.From(payload)
 		if err != nil {
 			fmt.Printf("Error casting servers: %s\n", err.Error())

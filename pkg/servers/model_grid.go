@@ -8,6 +8,7 @@ type DriversSession struct {
 
 type DriverSession struct {
 	Driver           string  `json:"driver"`
+	Diff             float64 `json:"diff"`
 	S1               float64 `json:"s1"`
 	S2               float64 `json:"s2"`
 	S3               float64 `json:"s3"`

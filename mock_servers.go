@@ -22,7 +22,7 @@ func createHttpServer(port int) {
 		fmt.Fprintf(w, "Hello, you've requested: %s\n", r.URL.Path)
 	})
 
-	mux.HandleFunc("/rest/watch/sessionInfo", handleSessionInfoJson)
+	mux.HandleFunc("/rest/watch/sessionInfo", handleSessionInfoJsonF(port))
 	mux.HandleFunc("/rest/watch/standings", handleStandingsJson)
 	mux.HandleFunc("/rest/watch/standings/history", handleStandingsHistoryJson)
 
@@ -30,8 +30,12 @@ func createHttpServer(port int) {
 	_ = http.ListenAndServe(fmt.Sprintf(":%d", port), mux)
 }
 
-func handleSessionInfoJson(w http.ResponseWriter, r *http.Request) {
-	http.ServeFile(w, r, "data/sessionInfo.json")
+func handleSessionInfoJsonF(port int) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		portStr := fmt.Sprintf("%d", port)
+		lastChar := portStr[len(portStr)-1:]
+		http.ServeFile(w, r, fmt.Sprintf("data/sessionInfo%s.json", lastChar))
+	}
 }
 
 func handleStandingsJson(w http.ResponseWriter, r *http.Request) {

@@ -55,7 +55,7 @@ func NewServerApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, pubsubMgr
 	gridApp := NewGridApp(bot, gridAppMenu, pubsubMgr, serverID)
 
 	stintAppMenu := menus.NewApplicationMenu("", serverID, sa)
-	stintApp := NewStintApp(bot, stintAppMenu, serverID)
+	stintApp := NewStintApp(bot, stintAppMenu, pubsubMgr, serverID)
 
 	accepters := []Accepter{gridApp, stintApp}
 
@@ -84,7 +84,7 @@ func (sa *ServerApp) update(si servers.SessionInfo) {
 
 func (sa *ServerApp) updater() {
 	for payload := range sa.sessionInfoUpdateChan {
-		fmt.Println("Updating SessionInfo")
+		// fmt.Println("Updating SessionInfo")
 		s, err := sa.caster.From(payload)
 		if err != nil {
 			fmt.Printf("Error casting SessionInfo: %s\n", err.Error())
@@ -109,7 +109,6 @@ func (sa *ServerApp) AcceptCommand(command string) (bool, func(ctx context.Conte
 	}
 
 	return false, nil
-
 }
 
 func (sa *ServerApp) AcceptCallback(query *tgbotapi.CallbackQuery) (bool, func(ctx context.Context, query *tgbotapi.CallbackQuery) error) {

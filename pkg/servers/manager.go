@@ -4,7 +4,6 @@ import (
 	"context"
 	"f1champshotlapsbot/pkg/caster"
 	"f1champshotlapsbot/pkg/pubsub"
-	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -27,6 +26,7 @@ type Manager struct {
 	serversCaster        caster.ChannelCaster[[]Server]
 	sessionInfoCaster    caster.ChannelCaster[SessionInfo]
 	driversSessionCaster caster.ChannelCaster[DriversSession]
+	stintDataCaster      caster.ChannelCaster[StintData]
 }
 
 func NewManager(ctx context.Context, bot *tgbotapi.BotAPI, domain string, pubsubMgr *pubsub.PubSub) *Manager {
@@ -37,6 +37,7 @@ func NewManager(ctx context.Context, bot *tgbotapi.BotAPI, domain string, pubsub
 		serversCaster:        caster.JSONChannelCaster[[]Server]{},
 		sessionInfoCaster:    caster.JSONChannelCaster[SessionInfo]{},
 		driversSessionCaster: caster.JSONChannelCaster[DriversSession]{},
+		stintDataCaster:      caster.JSONChannelCaster[StintData]{},
 		pubsubMgr:            pubsubMgr,
 	}
 }
@@ -64,7 +65,7 @@ func (sm *Manager) Sync(ticker *time.Ticker, exitChan chan bool) {
 }
 
 func (sm *Manager) doSync(t time.Time) {
-	fmt.Println("Refreshing servers statuses: ", t)
+	// fmt.Println("Refreshing servers statuses: ", t)
 	ss := sm.checkServersOnline()
 	payload, err := sm.serversCaster.To(ss)
 	if err != nil {
@@ -124,6 +125,7 @@ func (sm *Manager) checkServersOnline() []Server {
 			} else {
 				sm.pubsubMgr.Publish(ss[idx].ID, payload)
 			}
+
 			// get driver sessions
 			if sessionInfo.Online {
 				dss, err := ss[idx].GetDriverSessions(sm.ctx)
@@ -132,11 +134,26 @@ func (sm *Manager) checkServersOnline() []Server {
 				}
 				payload, err := sm.driversSessionCaster.To(dss)
 				if err != nil {
-					log.Printf("Error casting servers to json: %s", err.Error())
+					log.Printf("Error casting driver sessions to json: %s", err.Error())
 				} else {
 					sm.pubsubMgr.Publish(PubSubDriversSessionPreffix+ss[idx].ID, payload)
 				}
 			}
+
+			// get stints
+			if sessionInfo.Online {
+				sd, err := ss[idx].GetStintData(sm.ctx)
+				if err != nil {
+					log.Printf("Error getting stint data: %s", err.Error())
+				}
+				payload, err := sm.stintDataCaster.To(sd)
+				if err != nil {
+					log.Printf("Error casting stint data to json: %s", err.Error())
+				} else {
+					sm.pubsubMgr.Publish(PubSubStintDataPreffix+ss[idx].ID, payload)
+				}
+			}
+
 		}(i)
 	}
 	wg.Wait()

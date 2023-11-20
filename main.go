@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"f1champshotlapsbot/pkg/apps"
+	"f1champshotlapsbot/pkg/apps/mainapp"
 	"log"
 	"os"
 	"os/signal"
@@ -75,7 +76,7 @@ func main() {
 	refreshServersTicker := time.NewTicker(10 * time.Second)
 
 	// build the main app
-	app = apps.NewMainApp(ctx, bot, domain, pubsubMgr, exitChan, refreshHotlapsTicker, refreshServersTicker)
+	app = mainapp.NewMainApp(ctx, bot, domain, pubsubMgr, exitChan, refreshHotlapsTicker, refreshServersTicker)
 
 	// Tell the user the bot is online
 	log.Println("Start listening for updates. Press Ctrl-C to stop it")

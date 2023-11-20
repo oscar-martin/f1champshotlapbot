@@ -110,6 +110,9 @@ func (sm *Manager) checkServersOnline() []Server {
 			defer wg.Done()
 			// get session info
 			sessionInfo, err := ss[idx].GetSessionInfo(sm.ctx)
+
+			sessionInfo.TimeToEnd = "02h 44m"
+
 			sessionInfo.ServerID = ss[idx].ID
 			if err != nil {
 				sessionInfo.Online = false

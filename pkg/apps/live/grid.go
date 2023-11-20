@@ -1,4 +1,4 @@
-package apps
+package live
 
 import (
 	"bytes"
@@ -18,29 +18,8 @@ import (
 )
 
 const (
-	inlineKeyboardTimes    = "Tiempos"
-	inlineKeyboardSectors  = "Sectores"
-	inlineKeyboardCompound = "Gomas"
-	inlineKeyboardLaps     = "Vueltas"
-	inlineKeyboardTeam     = "Coches"
-	inlineKeyboardDriver   = "Pilotos"
-	inlineKeyboardUpdate   = "Actualizar"
-	inlineKeyboardDiff     = "Diferencia"
-	inlineKeyboardMaxSpeed = "Máx. Vel"
-
-	symbolTimes    = "⏱"
-	symbolSectors  = "🔂"
-	symbolCompound = "🛞"
-	symbolLaps     = "🏁"
-	symbolTeam     = "🏎️"
-	symbolDriver   = "👐"
-	symbolUpdate   = "🔄"
-	symbolDiff     = "⏲️"
-	symbolMaxSpeed = "🚀"
-
-	SubcommandShowLiveTiming = "show_live_timing"
-
-	tableDriver = "PIL"
+	subcommandShowLiveTiming = "show_live_timing"
+	tableDriver              = "PIL"
 )
 
 type GridApp struct {
@@ -83,13 +62,13 @@ func (ga *GridApp) updater() {
 			fmt.Printf("Error casting DriverSessions: %s\n", err.Error())
 			continue
 		}
-		ga.mu.Lock()
 		ga.update(dss)
-		ga.mu.Unlock()
 	}
 }
 
 func (ga *GridApp) update(dss servers.DriversSession) {
+	ga.mu.Lock()
+	defer ga.mu.Unlock()
 	ga.driversSession = dss
 }
 
@@ -99,11 +78,11 @@ func (ga *GridApp) AcceptCommand(command string) (bool, func(ctx context.Context
 
 func (ga *GridApp) AcceptCallback(query *tgbotapi.CallbackQuery) (bool, func(ctx context.Context, query *tgbotapi.CallbackQuery) error) {
 	data := strings.Split(query.Data, ":")
-	if data[0] == SubcommandShowLiveTiming && data[2] == ga.serverID {
+	if data[0] == subcommandShowLiveTiming && data[1] == ga.serverID {
 		ga.mu.Lock()
 		defer ga.mu.Unlock()
 		return true, func(ctx context.Context, query *tgbotapi.CallbackQuery) error {
-			return ga.handleSessionDataCallbackQuery(query.Message.Chat.ID, &query.Message.MessageID, data[1:]...)
+			return ga.handleSessionDataCallbackQuery(query.Message.Chat.ID, &query.Message.MessageID, data[2:]...)
 		}
 	}
 	return false, nil
@@ -115,7 +94,7 @@ func (ga *GridApp) AcceptButton(button string) (bool, func(ctx context.Context, 
 
 	// fmt.Printf("GRID: button: %s. appName: %s\n", button, buttonGrid+" "+ga.driversSession.ServerName)
 	if button == buttonGrid+" "+ga.driversSession.ServerName {
-		return true, ga.RenderGrid()
+		return true, ga.renderGrid()
 	} else if button == ga.appMenu.ButtonBackTo() {
 		return true, func(ctx context.Context, chatId int64) error {
 			msg := tgbotapi.NewMessage(chatId, "OK")
@@ -128,9 +107,9 @@ func (ga *GridApp) AcceptButton(button string) (bool, func(ctx context.Context, 
 	return false, nil
 }
 
-func (ga *GridApp) RenderGrid() func(ctx context.Context, chatId int64) error {
+func (ga *GridApp) renderGrid() func(ctx context.Context, chatId int64) error {
 	return func(ctx context.Context, chatId int64) error {
-		err := ga.SendSessionData(chatId, nil, ga.driversSession, inlineKeyboardTimes)
+		err := ga.sendSessionData(chatId, nil, ga.driversSession, inlineKeyboardTimes)
 		if err != nil {
 			log.Printf("An error occured: %s", err.Error())
 		}
@@ -140,10 +119,10 @@ func (ga *GridApp) RenderGrid() func(ctx context.Context, chatId int64) error {
 
 func (ga *GridApp) handleSessionDataCallbackQuery(chatId int64, messageId *int, data ...string) error {
 	infoType := data[0]
-	return ga.SendSessionData(chatId, messageId, ga.driversSession, infoType)
+	return ga.sendSessionData(chatId, messageId, ga.driversSession, infoType)
 }
 
-func (ga *GridApp) SendSessionData(chatId int64, messageId *int, driversSession servers.DriversSession, infoType string) error {
+func (ga *GridApp) sendSessionData(chatId int64, messageId *int, driversSession servers.DriversSession, infoType string) error {
 	if len(driversSession.Drivers) > 0 {
 		var b bytes.Buffer
 		t := table.NewWriter()
@@ -219,20 +198,20 @@ func (ga *GridApp) SendSessionData(chatId int64, messageId *int, driversSession 
 func getInlineKeyboard(serverID string) tgbotapi.InlineKeyboardMarkup {
 	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardTimes+" "+symbolTimes, fmt.Sprintf("%s:%s:%s", SubcommandShowLiveTiming, inlineKeyboardTimes, serverID)),
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardDiff+" "+symbolDiff, fmt.Sprintf("%s:%s:%s", SubcommandShowLiveTiming, inlineKeyboardDiff, serverID)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardTimes+" "+symbolTimes, fmt.Sprintf("%s:%s:%s", subcommandShowLiveTiming, serverID, inlineKeyboardTimes)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardDiff+" "+symbolDiff, fmt.Sprintf("%s:%s:%s", subcommandShowLiveTiming, serverID, inlineKeyboardDiff)),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardSectors+" "+symbolSectors, fmt.Sprintf("%s:%s:%s", SubcommandShowLiveTiming, inlineKeyboardSectors, serverID)),
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardCompound+" "+symbolTimes, fmt.Sprintf("%s:%s:%s", SubcommandShowLiveTiming, inlineKeyboardCompound, serverID)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardSectors+" "+symbolSectors, fmt.Sprintf("%s:%s:%s", subcommandShowLiveTiming, serverID, inlineKeyboardSectors)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardCompound+" "+symbolTimes, fmt.Sprintf("%s:%s:%s", subcommandShowLiveTiming, serverID, inlineKeyboardCompound)),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardLaps+" "+symbolLaps, fmt.Sprintf("%s:%s:%s", SubcommandShowLiveTiming, inlineKeyboardLaps, serverID)),
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardTeam+" "+symbolTeam, fmt.Sprintf("%s:%s:%s", SubcommandShowLiveTiming, inlineKeyboardTeam, serverID)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardLaps+" "+symbolLaps, fmt.Sprintf("%s:%s:%s", subcommandShowLiveTiming, serverID, inlineKeyboardLaps)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardTeam+" "+symbolTeam, fmt.Sprintf("%s:%s:%s", subcommandShowLiveTiming, serverID, inlineKeyboardTeam)),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardDriver+" "+symbolDriver, fmt.Sprintf("%s:%s:%s", SubcommandShowLiveTiming, inlineKeyboardDriver, serverID)),
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardUpdate+" "+symbolUpdate, fmt.Sprintf("%s:%s:%s", SubcommandShowLiveTiming, inlineKeyboardSectors, serverID)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardDriver+" "+symbolDriver, fmt.Sprintf("%s:%s:%s", subcommandShowLiveTiming, serverID, inlineKeyboardDriver)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardUpdate+" "+symbolUpdate, fmt.Sprintf("%s:%s:%s", subcommandShowLiveTiming, serverID, inlineKeyboardSectors)),
 		),
 	)
 }

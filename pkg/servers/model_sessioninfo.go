@@ -44,4 +44,6 @@ type SessionInfo struct {
 	ServerName         string         `json:"serverName"`
 	StartEventTime     int            `json:"startEventTime"`
 	RaceCompletion     RaceCompletion `json:"raceCompletion"`
+	// added by me
+	TimeToEnd string `json:"timeToEnd"`
 }

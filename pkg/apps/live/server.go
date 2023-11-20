@@ -1,7 +1,8 @@
-package apps
+package live
 
 import (
 	"context"
+	"f1champshotlapsbot/pkg/apps"
 	"f1champshotlapsbot/pkg/caster"
 	"f1champshotlapsbot/pkg/menus"
 	"f1champshotlapsbot/pkg/pubsub"
@@ -14,9 +15,8 @@ import (
 )
 
 const (
-	serverAppName = "Server"
-	buttonStint   = "Tanda"
-	buttonGrid    = "Parrilla"
+	buttonStint = "Tanda"
+	buttonGrid  = "Parrilla"
 )
 
 type ServerApp struct {
@@ -25,7 +25,7 @@ type ServerApp struct {
 	menuKeyboard          tgbotapi.ReplyKeyboardMarkup
 	gridApp               *GridApp
 	stintApp              *StintApp
-	accepters             []Accepter
+	accepters             []apps.Accepter
 	serverID              string
 	sessionInfo           servers.SessionInfo
 	sessionInfoUpdateChan <-chan string
@@ -46,7 +46,6 @@ func NewServerApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, pubsubMgr
 		serverID:              serverID,
 		caster:                caster.JSONChannelCaster[servers.SessionInfo]{},
 		sessionInfoUpdateChan: pubsubMgr.Subscribe(serverID),
-		menuKeyboard:          menuKeyboard,
 	}
 
 	go sa.updater()
@@ -57,7 +56,7 @@ func NewServerApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, pubsubMgr
 	stintAppMenu := menus.NewApplicationMenu("", serverID, sa)
 	stintApp := NewStintApp(bot, stintAppMenu, pubsubMgr, serverID)
 
-	accepters := []Accepter{gridApp, stintApp}
+	accepters := []apps.Accepter{gridApp, stintApp}
 
 	sa.accepters = accepters
 	sa.gridApp = gridApp
@@ -140,11 +139,12 @@ func (sa *ServerApp) AcceptButton(button string) (bool, func(ctx context.Context
 				fmt.Sprintf(`%s:
 
 	‣ Circuito: %s (%0.fm)
+	‣ Tiempo restante: %s
 	‣ Sesión: %s (Vueltas: %d)
 	‣ Coches: %d
 	‣ Lluvia: %d%% (min: %d%%. max: %d%%)
 	‣ Temperatura (Pista/Ambiente): %0.fºC/%0.fºC
-	`, sa.sessionInfo.ServerName, si.TrackName, si.LapDistance, si.Session, si.MaximumLaps, si.NumberOfVehicles, si.Raining, si.MinPathWetness, si.MaxPathWetness, si.TrackTemp, si.AmbientTemp))
+	`, sa.sessionInfo.ServerName, si.TrackName, si.LapDistance, si.TimeToEnd, si.Session, si.MaximumLaps, si.NumberOfVehicles, si.Raining, si.MinPathWetness, si.MaxPathWetness, si.TrackTemp, si.AmbientTemp))
 			msg.ReplyMarkup = sa.menuKeyboard
 			_, err := sa.bot.Send(msg)
 			return err

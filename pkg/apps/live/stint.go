@@ -1,4 +1,4 @@
-package apps
+package live
 
 import (
 	"bytes"
@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	SubcommandShowDrivers = "show_drivers"
+	subcommandShowDrivers = "show_drivers"
 	tableLap              = "LAP"
 )
 
@@ -31,8 +31,7 @@ type StintApp struct {
 	stintDataUpdateChan <-chan string
 	caster              caster.ChannelCaster[servers.StintData]
 	mu                  sync.Mutex
-
-	menuKeyboard tgbotapi.ReplyKeyboardMarkup
+	menuKeyboard        tgbotapi.ReplyKeyboardMarkup
 }
 
 func NewStintApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, pubsubMgr *pubsub.PubSub, serverID string) *StintApp {
@@ -64,13 +63,13 @@ func (sa *StintApp) updater() {
 			fmt.Printf("Error casting StintData: %s\n", err.Error())
 			continue
 		}
-		sa.mu.Lock()
 		sa.update(dss)
-		sa.mu.Unlock()
 	}
 }
 
 func (sa *StintApp) update(sd servers.StintData) {
+	sa.mu.Lock()
+	defer sa.mu.Unlock()
 	sa.stintData = sd
 }
 
@@ -80,12 +79,11 @@ func (sa *StintApp) AcceptCommand(command string) (bool, func(ctx context.Contex
 
 func (sa *StintApp) AcceptCallback(query *tgbotapi.CallbackQuery) (bool, func(ctx context.Context, query *tgbotapi.CallbackQuery) error) {
 	data := strings.Split(query.Data, ":")
-	// fmt.Printf("STINT: callback: %s. appName: %s\n", query.Data, SubcommandShowDrivers)
-	if data[0] == SubcommandShowDrivers && data[2] == sa.serverID {
+	if data[0] == subcommandShowDrivers && data[1] == sa.serverID {
 		sa.mu.Lock()
 		defer sa.mu.Unlock()
 		return true, func(ctx context.Context, query *tgbotapi.CallbackQuery) error {
-			return sa.handleStintDataCallbackQuery(query.Message.Chat.ID, &query.Message.MessageID, data[1:]...)
+			return sa.handleStintDataCallbackQuery(query.Message.Chat.ID, &query.Message.MessageID, data[2:]...)
 		}
 	}
 	return false, nil
@@ -97,20 +95,7 @@ func (sa *StintApp) AcceptButton(button string) (bool, func(ctx context.Context,
 
 	// fmt.Printf("STINT: button: %s. appName: %s\n", button, buttonStint+" "+sa.stintData.ServerName)
 	if button == buttonStint+" "+sa.stintData.ServerName {
-		return true, func(ctx context.Context, chatId int64) error {
-			if len(sa.stintData.Drivers) > 0 {
-				err := sa.sendDriversData(chatId, nil)
-				if err != nil {
-					return err
-				}
-			} else {
-				message := "No hay pilotos en la sesión"
-				msg := tgbotapi.NewMessage(chatId, message)
-				_, err := sa.bot.Send(msg)
-				return err
-			}
-			return nil
-		}
+		return true, sa.renderDrivers()
 	} else if button == sa.appMenu.ButtonBackTo() {
 		return true, func(ctx context.Context, chatId int64) error {
 			msg := tgbotapi.NewMessage(chatId, "OK")
@@ -118,24 +103,20 @@ func (sa *StintApp) AcceptButton(button string) (bool, func(ctx context.Context,
 			_, err := sa.bot.Send(msg)
 			return err
 		}
-	} else if strings.HasPrefix(button, fmt.Sprintf("%s:%s", SubcommandShowDrivers, sa.stintData.ServerID)) {
-		driver := button[strings.Index(button, ":")+1:]
-		return true, sa.renderStint(driver)
 	}
 	// fmt.Print("STINT: FALSE\n")
 	return false, nil
 }
 
-func (sa *StintApp) renderStint(driver string) func(ctx context.Context, chatId int64) error {
+func (sa *StintApp) renderDrivers() func(ctx context.Context, chatId int64) error {
 	return func(ctx context.Context, chatId int64) error {
-		driverStint, found := sa.stintData.Drivers[driver]
-		if found {
-			err := sa.sendStintData(chatId, nil, driverStint, sa.stintData.ServerName, sa.stintData.ServerID, inlineKeyboardTimes)
+		if len(sa.stintData.Drivers) > 0 {
+			err := sa.sendDriversData(chatId, nil)
 			if err != nil {
-				log.Printf("An error occured: %s", err.Error())
+				return err
 			}
 		} else {
-			message := fmt.Sprintf("No hay datos para el piloto %s", driver)
+			message := "No hay pilotos en la sesión"
 			msg := tgbotapi.NewMessage(chatId, message)
 			_, err := sa.bot.Send(msg)
 			return err
@@ -146,7 +127,7 @@ func (sa *StintApp) renderStint(driver string) func(ctx context.Context, chatId 
 
 func (sa *StintApp) handleStintDataCallbackQuery(chatId int64, messageId *int, data ...string) error {
 	infoType := data[0]
-	driver := data[2]
+	driver := data[1]
 	driverStint, found := sa.stintData.Drivers[driver]
 	if found {
 		err := sa.sendStintData(chatId, messageId, driverStint, sa.stintData.ServerName, sa.stintData.ServerID, infoType)
@@ -223,15 +204,15 @@ func (sa *StintApp) sendStintData(chatId int64, messageId *int, driverStint serv
 func getStintInlineKeyboard(driver, serverID string) tgbotapi.InlineKeyboardMarkup {
 	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardTimes+" "+symbolTimes, fmt.Sprintf("%s:%s:%s:%s", SubcommandShowDrivers, inlineKeyboardTimes, serverID, driver)),
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardDiff+" "+symbolDiff, fmt.Sprintf("%s:%s:%s:%s", SubcommandShowDrivers, inlineKeyboardDiff, serverID, driver)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardTimes+" "+symbolTimes, fmt.Sprintf("%s:%s:%s:%s", subcommandShowDrivers, serverID, inlineKeyboardTimes, driver)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardDiff+" "+symbolDiff, fmt.Sprintf("%s:%s:%s:%s", subcommandShowDrivers, serverID, inlineKeyboardDiff, driver)),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardSectors+" "+symbolSectors, fmt.Sprintf("%s:%s:%s:%s", SubcommandShowDrivers, inlineKeyboardSectors, serverID, driver)),
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardMaxSpeed+" "+symbolMaxSpeed, fmt.Sprintf("%s:%s:%s:%s", SubcommandShowDrivers, inlineKeyboardMaxSpeed, serverID, driver)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardSectors+" "+symbolSectors, fmt.Sprintf("%s:%s:%s:%s", subcommandShowDrivers, serverID, inlineKeyboardSectors, driver)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardMaxSpeed+" "+symbolMaxSpeed, fmt.Sprintf("%s:%s:%s:%s", subcommandShowDrivers, serverID, inlineKeyboardMaxSpeed, driver)),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardUpdate+" "+symbolUpdate, fmt.Sprintf("%s:%s:%s:%s", SubcommandShowDrivers, inlineKeyboardSectors, serverID, driver)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardUpdate+" "+symbolUpdate, fmt.Sprintf("%s:%s:%s:%s", subcommandShowDrivers, serverID, inlineKeyboardSectors, driver)),
 		),
 	)
 }
@@ -267,7 +248,7 @@ func (sa *StintApp) driversTextMarkup() (text string, markup tgbotapi.InlineKeyb
 		if idx%2 == 0 {
 			buttons = append(buttons, []tgbotapi.InlineKeyboardButton{})
 		}
-		buttons[len(buttons)-1] = append(buttons[len(buttons)-1], tgbotapi.NewInlineKeyboardButtonData(driver, fmt.Sprintf("%s:%s:%s:%s", SubcommandShowDrivers, inlineKeyboardTimes, sa.stintData.ServerID, driver)))
+		buttons[len(buttons)-1] = append(buttons[len(buttons)-1], tgbotapi.NewInlineKeyboardButtonData(driver, fmt.Sprintf("%s:%s:%s:%s", subcommandShowDrivers, sa.stintData.ServerID, inlineKeyboardTimes, driver)))
 	}
 	text = "Elige el piloto de la lista:\n\n"
 	markup = tgbotapi.NewInlineKeyboardMarkup(buttons...)

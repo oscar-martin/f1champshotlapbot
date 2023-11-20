@@ -1,7 +1,8 @@
-package apps
+package live
 
 import (
 	"context"
+	"f1champshotlapsbot/pkg/apps"
 	"f1champshotlapsbot/pkg/caster"
 	"f1champshotlapsbot/pkg/menus"
 	"f1champshotlapsbot/pkg/pubsub"
@@ -15,10 +16,6 @@ import (
 
 const (
 	liveAppName    = "Live"
-	buttonServer1  = "Server1"
-	buttonServer2  = "Server2"
-	buttonServer3  = "Server3"
-	buttonServer4  = "Server4"
 	buttonSettings = "Ajustes"
 )
 
@@ -26,7 +23,7 @@ type LiveApp struct {
 	bot               *tgbotapi.BotAPI
 	appMenu           menus.ApplicationMenu
 	menuKeyboard      tgbotapi.ReplyKeyboardMarkup
-	accepters         []Accepter
+	accepters         []apps.Accepter
 	serversUpdateChan <-chan string
 	caster            caster.ChannelCaster[[]servers.Server]
 	mu                sync.Mutex
@@ -48,7 +45,7 @@ func NewLiveApp(ctx context.Context, bot *tgbotapi.BotAPI, domain string, pubsub
 		serversUpdateChan: pubsubMgr.Subscribe(servers.PubSubServersTopic),
 	}
 
-	la.accepters = []Accepter{}
+	la.accepters = []apps.Accepter{}
 	for _, server := range ss {
 		serverAppMenu := menus.NewApplicationMenu(server.StatusAndName(), liveAppName, la)
 		serverApp := NewServerApp(la.bot, serverAppMenu, pubsubMgr, server.ID)

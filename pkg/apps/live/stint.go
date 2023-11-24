@@ -10,7 +10,6 @@ import (
 	"f1champshotlapsbot/pkg/servers"
 	"fmt"
 	"log"
-	"sort"
 	"strings"
 	"sync"
 
@@ -24,14 +23,14 @@ const (
 )
 
 type StintApp struct {
-	bot                 *tgbotapi.BotAPI
-	appMenu             menus.ApplicationMenu
-	serverID            string
-	stintData           servers.StintData
-	stintDataUpdateChan <-chan string
-	caster              caster.ChannelCaster[servers.StintData]
-	mu                  sync.Mutex
-	menuKeyboard        tgbotapi.ReplyKeyboardMarkup
+	bot                        *tgbotapi.BotAPI
+	appMenu                    menus.ApplicationMenu
+	serverID                   string
+	liveStandingData           servers.LiveStandingHistoryData
+	liveStandingDataUpdateChan <-chan string
+	caster                     caster.ChannelCaster[servers.LiveStandingHistoryData]
+	mu                         sync.Mutex
+	menuKeyboard               tgbotapi.ReplyKeyboardMarkup
 }
 
 func NewStintApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, pubsubMgr *pubsub.PubSub, serverID string) *StintApp {
@@ -42,12 +41,12 @@ func NewStintApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, pubsubMgr 
 	)
 
 	sa := &StintApp{
-		bot:                 bot,
-		appMenu:             appMenu,
-		serverID:            serverID,
-		caster:              caster.JSONChannelCaster[servers.StintData]{},
-		stintDataUpdateChan: pubsubMgr.Subscribe(servers.PubSubStintDataPreffix + serverID),
-		menuKeyboard:        menuKeyboard,
+		bot:                        bot,
+		appMenu:                    appMenu,
+		serverID:                   serverID,
+		caster:                     caster.JSONChannelCaster[servers.LiveStandingHistoryData]{},
+		liveStandingDataUpdateChan: pubsubMgr.Subscribe(servers.PubSubStintDataPreffix + serverID),
+		menuKeyboard:               menuKeyboard,
 	}
 
 	go sa.updater()
@@ -56,21 +55,21 @@ func NewStintApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, pubsubMgr 
 }
 
 func (sa *StintApp) updater() {
-	for payload := range sa.stintDataUpdateChan {
+	for payload := range sa.liveStandingDataUpdateChan {
 		// fmt.Println("Updating StintData")
-		dss, err := sa.caster.From(payload)
+		lsd, err := sa.caster.From(payload)
 		if err != nil {
 			fmt.Printf("Error casting StintData: %s\n", err.Error())
 			continue
 		}
-		sa.update(dss)
+		sa.update(lsd)
 	}
 }
 
-func (sa *StintApp) update(sd servers.StintData) {
+func (sa *StintApp) update(lsd servers.LiveStandingHistoryData) {
 	sa.mu.Lock()
 	defer sa.mu.Unlock()
-	sa.stintData = sd
+	sa.liveStandingData = lsd
 }
 
 func (sa *StintApp) AcceptCommand(command string) (bool, func(ctx context.Context, chatId int64) error) {
@@ -94,7 +93,7 @@ func (sa *StintApp) AcceptButton(button string) (bool, func(ctx context.Context,
 	defer sa.mu.Unlock()
 
 	// fmt.Printf("STINT: button: %s. appName: %s\n", button, buttonStint+" "+sa.stintData.ServerName)
-	if button == buttonStint+" "+sa.stintData.ServerName {
+	if button == buttonStint+" "+sa.liveStandingData.ServerName {
 		return true, sa.renderDrivers()
 	} else if button == sa.appMenu.ButtonBackTo() {
 		return true, func(ctx context.Context, chatId int64) error {
@@ -110,7 +109,7 @@ func (sa *StintApp) AcceptButton(button string) (bool, func(ctx context.Context,
 
 func (sa *StintApp) renderDrivers() func(ctx context.Context, chatId int64) error {
 	return func(ctx context.Context, chatId int64) error {
-		if len(sa.stintData.Drivers) > 0 {
+		if len(sa.liveStandingData.DriverNames) > 0 {
 			err := sa.sendDriversData(chatId, nil)
 			if err != nil {
 				return err
@@ -128,9 +127,9 @@ func (sa *StintApp) renderDrivers() func(ctx context.Context, chatId int64) erro
 func (sa *StintApp) handleStintDataCallbackQuery(chatId int64, messageId *int, data ...string) error {
 	infoType := data[0]
 	driver := data[1]
-	driverStint, found := sa.stintData.Drivers[driver]
+	driverData, found := sa.liveStandingData.DriversData[driver]
 	if found {
-		err := sa.sendStintData(chatId, messageId, driverStint, sa.stintData.ServerName, sa.stintData.ServerID, infoType)
+		err := sa.sendStintData(chatId, messageId, driverData, driver, sa.liveStandingData.ServerName, sa.liveStandingData.ServerID, infoType)
 		if err != nil {
 			log.Printf("An error occured: %s", err.Error())
 		}
@@ -143,8 +142,8 @@ func (sa *StintApp) handleStintDataCallbackQuery(chatId int64, messageId *int, d
 	return nil
 }
 
-func (sa *StintApp) sendStintData(chatId int64, messageId *int, driverStint servers.DriverStint, serverName, serverId, infoType string) error {
-	if len(driverStint.Laps) > 0 {
+func (sa *StintApp) sendStintData(chatId int64, messageId *int, driverData []servers.StandingHistoryDriverData, driverName, serverName, serverId, infoType string) error {
+	if len(driverData) > 0 {
 		var b bytes.Buffer
 		t := table.NewWriter()
 		t.SetOutputMirror(&b)
@@ -152,7 +151,7 @@ func (sa *StintApp) sendStintData(chatId int64, messageId *int, driverStint serv
 		t.AppendSeparator()
 
 		t.AppendHeader(table.Row{tableLap, infoType})
-		for idx, lapData := range driverStint.Laps {
+		for idx, lapData := range driverData {
 			switch infoType {
 			case inlineKeyboardTimes:
 				t.AppendRow([]interface{}{
@@ -160,33 +159,33 @@ func (sa *StintApp) sendStintData(chatId int64, messageId *int, driverStint serv
 					helper.SecondsToMinutes(lapData.LapTime),
 				})
 			case inlineKeyboardSectors:
+				ls1 := lapData.SectorTime1
+				ls2 := -1.0
+				if ls1 > 0.0 && lapData.SectorTime2 > 0.0 {
+					ls2 = lapData.SectorTime2 - ls1
+				}
+				ls3 := -1.0
+				if ls2 > 0.0 && lapData.LapTime > 0.0 {
+					ls3 = lapData.LapTime - ls2 - ls1
+				}
+
 				t.AppendRow([]interface{}{
 					fmt.Sprintf("%d", idx+1),
-					fmt.Sprintf("%s %s %s", helper.ToSectorTime(lapData.S1), helper.ToSectorTime(lapData.S2), helper.ToSectorTime(lapData.S3)),
-				})
-			case inlineKeyboardMaxSpeed:
-				t.AppendRow([]interface{}{
-					fmt.Sprintf("%d", idx+1),
-					fmt.Sprintf("%.1f", lapData.MaxSpeed),
-				})
-			case inlineKeyboardDiff:
-				t.AppendRow([]interface{}{
-					fmt.Sprintf("%d", idx+1),
-					fmt.Sprintf("%.1fs", lapData.Diff),
+					fmt.Sprintf("%s %s %s", helper.ToSectorTime(ls1), helper.ToSectorTime(ls2), helper.ToSectorTime(ls3)),
 				})
 			}
 		}
 		t.Render()
 
-		keyboard := getStintInlineKeyboard(driverStint.Driver, serverId)
+		keyboard := getStintInlineKeyboard(driverName, serverId)
 		var cfg tgbotapi.Chattable
 		if messageId == nil {
-			msg := tgbotapi.NewMessage(chatId, fmt.Sprintf("```\nDatos de %s en %q\n\n%s```", driverStint.Driver, serverName, b.String()))
+			msg := tgbotapi.NewMessage(chatId, fmt.Sprintf("```\nDatos de %s en %q\n\n%s```", driverName, serverName, b.String()))
 			msg.ParseMode = tgbotapi.ModeMarkdownV2
 			msg.ReplyMarkup = keyboard
 			cfg = msg
 		} else {
-			msg := tgbotapi.NewEditMessageText(chatId, *messageId, fmt.Sprintf("```\nDatos de %s en %q\n\n%s```", driverStint.Driver, serverName, b.String()))
+			msg := tgbotapi.NewEditMessageText(chatId, *messageId, fmt.Sprintf("```\nDatos de %s en %q\n\n%s```", driverName, serverName, b.String()))
 			msg.ParseMode = tgbotapi.ModeMarkdownV2
 			msg.ReplyMarkup = &keyboard
 			cfg = msg
@@ -205,14 +204,15 @@ func getStintInlineKeyboard(driver, serverID string) tgbotapi.InlineKeyboardMark
 	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardTimes+" "+symbolTimes, fmt.Sprintf("%s:%s:%s:%s", subcommandShowDrivers, serverID, inlineKeyboardTimes, driver)),
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardDiff+" "+symbolDiff, fmt.Sprintf("%s:%s:%s:%s", subcommandShowDrivers, serverID, inlineKeyboardDiff, driver)),
-		),
-		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardSectors+" "+symbolSectors, fmt.Sprintf("%s:%s:%s:%s", subcommandShowDrivers, serverID, inlineKeyboardSectors, driver)),
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardMaxSpeed+" "+symbolMaxSpeed, fmt.Sprintf("%s:%s:%s:%s", subcommandShowDrivers, serverID, inlineKeyboardMaxSpeed, driver)),
+			// tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardDiff+" "+symbolDiff, fmt.Sprintf("%s:%s:%s:%s", subcommandShowDrivers, serverID, inlineKeyboardDiff, driver)),
 		),
+		// tgbotapi.NewInlineKeyboardRow(
+		// 	tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardBestSectors+" "+symbolSectors, fmt.Sprintf("%s:%s:%s:%s", subcommandShowDrivers, serverID, inlineKeyboardBestSectors, driver)),
+		// 	tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardMaxSpeed+" "+symbolMaxSpeed, fmt.Sprintf("%s:%s:%s:%s", subcommandShowDrivers, serverID, inlineKeyboardMaxSpeed, driver)),
+		// ),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardUpdate+" "+symbolUpdate, fmt.Sprintf("%s:%s:%s:%s", subcommandShowDrivers, serverID, inlineKeyboardSectors, driver)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardUpdate+" "+symbolUpdate, fmt.Sprintf("%s:%s:%s:%s", subcommandShowDrivers, serverID, inlineKeyboardTimes, driver)),
 		),
 	)
 }
@@ -236,19 +236,13 @@ func (sa *StintApp) sendDriversData(chatId int64, messageId *int) error {
 }
 
 func (sa *StintApp) driversTextMarkup() (text string, markup tgbotapi.InlineKeyboardMarkup) {
-	drivers := make([]string, 0, len(sa.stintData.Drivers))
-
-	for d := range sa.stintData.Drivers {
-		drivers = append(drivers, d)
-	}
-	sort.Strings(drivers)
 	buttons := [][]tgbotapi.InlineKeyboardButton{}
 
-	for idx, driver := range drivers {
+	for idx, driver := range sa.liveStandingData.DriverNames {
 		if idx%2 == 0 {
 			buttons = append(buttons, []tgbotapi.InlineKeyboardButton{})
 		}
-		buttons[len(buttons)-1] = append(buttons[len(buttons)-1], tgbotapi.NewInlineKeyboardButtonData(driver, fmt.Sprintf("%s:%s:%s:%s", subcommandShowDrivers, sa.stintData.ServerID, inlineKeyboardTimes, driver)))
+		buttons[len(buttons)-1] = append(buttons[len(buttons)-1], tgbotapi.NewInlineKeyboardButtonData(driver, fmt.Sprintf("%s:%s:%s:%s", subcommandShowDrivers, sa.liveStandingData.ServerID, inlineKeyboardTimes, driver)))
 	}
 	text = "Elige el piloto de la lista:\n\n"
 	markup = tgbotapi.NewInlineKeyboardMarkup(buttons...)

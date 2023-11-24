@@ -20,29 +20,33 @@ const (
 )
 
 type LiveApp struct {
-	bot               *tgbotapi.BotAPI
-	appMenu           menus.ApplicationMenu
-	menuKeyboard      tgbotapi.ReplyKeyboardMarkup
-	accepters         []apps.Accepter
-	serversUpdateChan <-chan string
-	caster            caster.ChannelCaster[[]servers.Server]
-	mu                sync.Mutex
+	bot                        *tgbotapi.BotAPI
+	appMenu                    menus.ApplicationMenu
+	menuKeyboard               tgbotapi.ReplyKeyboardMarkup
+	accepters                  []apps.Accepter
+	servers                    []servers.Server
+	liveSessionInfoUpdateChans []<-chan string
+	liveSessionInfoDataCaster  caster.ChannelCaster[servers.LiveSessionInfoData]
+	mu                         sync.Mutex
 }
 
-func NewLiveApp(ctx context.Context, bot *tgbotapi.BotAPI, domain string, pubsubMgr *pubsub.PubSub, appMenu menus.ApplicationMenu, exitChan chan bool, refreshTicker *time.Ticker) *LiveApp {
-	sm := servers.NewManager(ctx, bot, domain, pubsubMgr)
+func NewLiveApp(ctx context.Context, bot *tgbotapi.BotAPI, pubsubMgr *pubsub.PubSub, ss []servers.Server, appMenu menus.ApplicationMenu, exitChan chan bool, refreshTicker *time.Ticker) (*LiveApp, error) {
+	sm, err := servers.NewManager(ctx, bot, ss, pubsubMgr)
+	if err != nil {
+		return nil, err
+	}
 	sm.Sync(refreshTicker, exitChan)
 
-	ss, err := sm.GetInitialServers()
-	if err != nil {
-		fmt.Printf("Error getting initial servers: %s\n", err.Error())
+	liveSessionInfoUpdateChans := []<-chan string{}
+	for _, server := range ss {
+		liveSessionInfoUpdateChans = append(liveSessionInfoUpdateChans, pubsubMgr.Subscribe(servers.PubSubSessionInfoPreffix+server.ID))
 	}
-
 	la := &LiveApp{
-		bot:               bot,
-		appMenu:           appMenu,
-		caster:            caster.JSONChannelCaster[[]servers.Server]{},
-		serversUpdateChan: pubsubMgr.Subscribe(servers.PubSubServersTopic),
+		bot:                        bot,
+		appMenu:                    appMenu,
+		liveSessionInfoDataCaster:  caster.JSONChannelCaster[servers.LiveSessionInfoData]{},
+		liveSessionInfoUpdateChans: liveSessionInfoUpdateChans,
+		servers:                    ss,
 	}
 
 	la.accepters = []apps.Accepter{}
@@ -52,38 +56,58 @@ func NewLiveApp(ctx context.Context, bot *tgbotapi.BotAPI, domain string, pubsub
 		la.accepters = append(la.accepters, serverApp)
 	}
 
-	la.update(ss)
-	go la.updater()
+	la.updateKeyboard()
 
-	return la
+	for _, liveSessionInfoUpdateChan := range la.liveSessionInfoUpdateChans {
+		go la.updater(liveSessionInfoUpdateChan)
+	}
+
+	return la, nil
 }
 
-func (la *LiveApp) update(ss []servers.Server) {
-	menuKeyboard := tgbotapi.NewReplyKeyboard()
-	menuKeyboard.Keyboard = make([][]tgbotapi.KeyboardButton, len(ss)+1)
+func (la *LiveApp) updateKeyboard() {
 
-	for idx, server := range ss {
-		menuKeyboard.Keyboard[idx] = []tgbotapi.KeyboardButton{tgbotapi.NewKeyboardButton(server.StatusAndName())}
+	buttons := [][]tgbotapi.KeyboardButton{}
+	for idx := range la.servers {
+		if idx%2 == 0 {
+			buttons = append(buttons, []tgbotapi.KeyboardButton{})
+		}
+		buttons[len(buttons)-1] = append(buttons[len(buttons)-1], tgbotapi.NewKeyboardButton(la.servers[idx].StatusAndName()))
 	}
 	backButtonRow := tgbotapi.NewKeyboardButtonRow(
 		tgbotapi.NewKeyboardButton(la.appMenu.ButtonBackTo()),
 		tgbotapi.NewKeyboardButton(buttonSettings),
 	)
-	menuKeyboard.Keyboard[len(ss)] = backButtonRow
 
+	buttons = append(buttons, backButtonRow)
+
+	menuKeyboard := tgbotapi.NewReplyKeyboard()
+	menuKeyboard.Keyboard = buttons
 	la.menuKeyboard = menuKeyboard
 }
 
-func (la *LiveApp) updater() {
-	for payload := range la.serversUpdateChan {
-		// fmt.Println("Updating servers statuses")
-		ss, err := la.caster.From(payload)
+func (la *LiveApp) update(lsid servers.LiveSessionInfoData) {
+	for idx := range la.servers {
+		if la.servers[idx].ID == lsid.ServerID {
+			if lsid.SessionInfo.ServerName != "" {
+				la.servers[idx].Name = lsid.SessionInfo.ServerName
+			}
+			la.servers[idx].WebSocketRunning = lsid.SessionInfo.WebSocketRunning
+			la.servers[idx].RecevingData = lsid.SessionInfo.RecevingData
+		}
+	}
+	la.updateKeyboard()
+}
+
+func (la *LiveApp) updater(c <-chan string) {
+	for payload := range c {
+		lsid, err := la.liveSessionInfoDataCaster.From(payload)
 		if err != nil {
-			fmt.Printf("Error casting servers: %s\n", err.Error())
+			fmt.Printf("Error casting session info: %s\n", err.Error())
 			continue
 		}
 		la.mu.Lock()
-		la.update(ss)
+		la.update(lsid)
 		la.mu.Unlock()
 	}
 }

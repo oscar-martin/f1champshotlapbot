@@ -4,6 +4,7 @@ import (
 	"context"
 	"f1champshotlapsbot/pkg/apps"
 	"f1champshotlapsbot/pkg/caster"
+	"f1champshotlapsbot/pkg/helper"
 	"f1champshotlapsbot/pkg/menus"
 	"f1champshotlapsbot/pkg/pubsub"
 	"f1champshotlapsbot/pkg/servers"
@@ -20,17 +21,17 @@ const (
 )
 
 type ServerApp struct {
-	bot                   *tgbotapi.BotAPI
-	appMenu               menus.ApplicationMenu
-	menuKeyboard          tgbotapi.ReplyKeyboardMarkup
-	gridApp               *GridApp
-	stintApp              *StintApp
-	accepters             []apps.Accepter
-	serverID              string
-	sessionInfo           servers.SessionInfo
-	sessionInfoUpdateChan <-chan string
-	caster                caster.ChannelCaster[servers.SessionInfo]
-	mu                    sync.Mutex
+	bot                           *tgbotapi.BotAPI
+	appMenu                       menus.ApplicationMenu
+	menuKeyboard                  tgbotapi.ReplyKeyboardMarkup
+	gridApp                       *GridApp
+	stintApp                      *StintApp
+	accepters                     []apps.Accepter
+	serverID                      string
+	liveSessionInfoData           servers.LiveSessionInfoData
+	liveSessionInfoDataUpdateChan <-chan string
+	caster                        caster.ChannelCaster[servers.LiveSessionInfoData]
+	mu                            sync.Mutex
 }
 
 func sanitizeServerName(name string) string {
@@ -41,11 +42,11 @@ func sanitizeServerName(name string) string {
 
 func NewServerApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, pubsubMgr *pubsub.PubSub, serverID string) *ServerApp {
 	sa := &ServerApp{
-		bot:                   bot,
-		appMenu:               appMenu,
-		serverID:              serverID,
-		caster:                caster.JSONChannelCaster[servers.SessionInfo]{},
-		sessionInfoUpdateChan: pubsubMgr.Subscribe(serverID),
+		bot:                           bot,
+		appMenu:                       appMenu,
+		serverID:                      serverID,
+		caster:                        caster.JSONChannelCaster[servers.LiveSessionInfoData]{},
+		liveSessionInfoDataUpdateChan: pubsubMgr.Subscribe(servers.PubSubSessionInfoPreffix + serverID),
 	}
 
 	go sa.updater()
@@ -64,9 +65,9 @@ func NewServerApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, pubsubMgr
 	return sa
 }
 
-func (sa *ServerApp) update(si servers.SessionInfo) {
-	stint := buttonStint + " " + si.ServerName
-	grid := buttonGrid + " " + si.ServerName
+func (sa *ServerApp) update(lsid servers.LiveSessionInfoData) {
+	stint := buttonStint + " " + lsid.ServerName
+	grid := buttonGrid + " " + lsid.ServerName
 	menuKeyboard := tgbotapi.NewReplyKeyboard(
 		tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton(stint),
@@ -78,11 +79,11 @@ func (sa *ServerApp) update(si servers.SessionInfo) {
 	)
 
 	sa.menuKeyboard = menuKeyboard
-	sa.sessionInfo = si
+	sa.liveSessionInfoData = lsid
 }
 
 func (sa *ServerApp) updater() {
-	for payload := range sa.sessionInfoUpdateChan {
+	for payload := range sa.liveSessionInfoDataUpdateChan {
 		// fmt.Println("Updating SessionInfo")
 		s, err := sa.caster.From(payload)
 		if err != nil {
@@ -126,25 +127,46 @@ func (sa *ServerApp) AcceptButton(button string) (bool, func(ctx context.Context
 	defer sa.mu.Unlock()
 
 	// fmt.Printf("SERVER: button: %s. appName: %s\n", button, sa.sessionInfo.ServerName)
-	if sanitizeServerName(button) == sa.sessionInfo.ServerName {
+	if sanitizeServerName(button) == sa.liveSessionInfoData.ServerName {
 		return true, func(ctx context.Context, chatId int64) error {
-			if !sa.sessionInfo.Online {
-				msg := tgbotapi.NewMessage(chatId, fmt.Sprintf("El servidor %s está apagado", sa.sessionInfo.ServerName))
+			if !sa.liveSessionInfoData.SessionInfo.WebSocketRunning {
+				msg := tgbotapi.NewMessage(chatId, fmt.Sprintf("El servidor %s está apagado", sa.liveSessionInfoData.ServerName))
+				msg.ReplyMarkup = sa.appMenu.PrevMenu()
+				_, err := sa.bot.Send(msg)
+				return err
+			} else if !sa.liveSessionInfoData.SessionInfo.RecevingData {
+				msg := tgbotapi.NewMessage(chatId, fmt.Sprintf("No se reciben datos de server %s", sa.liveSessionInfoData.ServerName))
 				msg.ReplyMarkup = sa.appMenu.PrevMenu()
 				_, err := sa.bot.Send(msg)
 				return err
 			}
-			si := sa.sessionInfo
+			si := sa.liveSessionInfoData.SessionInfo
+			laps := "No Limitado"
+			if si.MaximumLaps < 100 {
+				laps = fmt.Sprintf("%d", si.MaximumLaps)
+			}
 			msg := tgbotapi.NewMessage(chatId,
 				fmt.Sprintf(`%s:
 
 	‣ Circuito: %s (%0.fm)
 	‣ Tiempo restante: %s
-	‣ Sesión: %s (Vueltas: %d)
+	‣ Sesión: %s (Vueltas: %s)
 	‣ Coches: %d
-	‣ Lluvia: %d%% (min: %d%%. max: %d%%)
+	‣ Lluvia: %.1f%% (min: %.1f%%. max: %.1f%%)
 	‣ Temperatura (Pista/Ambiente): %0.fºC/%0.fºC
-	`, sa.sessionInfo.ServerName, si.TrackName, si.LapDistance, si.TimeToEnd, si.Session, si.MaximumLaps, si.NumberOfVehicles, si.Raining, si.MinPathWetness, si.MaxPathWetness, si.TrackTemp, si.AmbientTemp))
+	`,
+					sa.liveSessionInfoData.ServerName,
+					si.TrackName,
+					si.LapDistance,
+					helper.SecondsToHoursAndMinutes(float64(si.EndEventTime-si.CurrentEventTime)),
+					si.Session,
+					laps,
+					si.NumberOfVehicles,
+					si.Raining,
+					si.MinPathWetness,
+					si.MaxPathWetness,
+					si.TrackTemp,
+					si.AmbientTemp))
 			msg.ReplyMarkup = sa.menuKeyboard
 			_, err := sa.bot.Send(msg)
 			return err

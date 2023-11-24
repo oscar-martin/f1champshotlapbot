@@ -8,14 +8,43 @@ import (
 
 // method to convert from seconds to minutes:seconds:milliseconds
 func SecondsToMinutes(seconds float64) string {
+	if seconds <= 0 {
+		return "-"
+	}
 	minutes := int(seconds / 60)
 	seconds = seconds - float64(minutes*60)
 	milliseconds := int((seconds - float64(int(seconds))) * 1000)
 	return fmt.Sprintf("%02d:%02d.%03d", minutes, int(seconds), milliseconds)
 }
 
+func SecondsToDiff(seconds float64) string {
+	if seconds <= 0 {
+		return "-"
+	}
+	diff := fmt.Sprintf("%.3fs", seconds)
+	chars := len(diff)
+	if chars < 9 {
+		// add spaces to the left
+		diff = strings.Repeat(" ", 9-chars) + diff
+	}
+	return diff
+}
+
+func SecondsToHoursAndMinutes(seconds float64) string {
+	if seconds <= 0 {
+		seconds = 0
+	}
+	hours := int(seconds / 3600)
+	seconds = seconds - float64(hours*3600)
+	minutes := int(seconds / 60)
+	return fmt.Sprintf("%02dh %02dm", hours, minutes)
+}
+
 // method to convert to seconds and 3 milliseconds
 func ToSectorTime(t float64) string {
+	if t <= 0 {
+		return "-"
+	}
 	return fmt.Sprintf("%.3f", t)
 }
 
@@ -31,7 +60,12 @@ func GetDriverCodeName(name string) string {
 	code := string(words[0][0])
 	// if there is a second word, get the first 2 letters of it
 	if len(words) > 1 {
-		code += words[1][:2]
+		if len(words[1]) > 2 {
+			code += words[1][:2]
+		} else {
+			// if the second word is only 1 letter long, get the first 3 letters of the first word
+			code += words[1]
+		}
 	} else {
 		// if there is no second word, get the first 2 letters of the first word
 		if len(words[0]) > 2 {

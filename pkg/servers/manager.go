@@ -17,37 +17,28 @@ var (
 )
 
 type Manager struct {
-	ctx       context.Context
-	mu        sync.Mutex
-	apiDomain string
-	// servers   []Server
-	bot                  *tgbotapi.BotAPI
-	pubsubMgr            *pubsub.PubSub
-	serversCaster        caster.ChannelCaster[[]Server]
-	sessionInfoCaster    caster.ChannelCaster[SessionInfo]
-	driversSessionCaster caster.ChannelCaster[DriversSession]
-	stintDataCaster      caster.ChannelCaster[StintData]
+	ctx                           context.Context
+	servers                       []Server
+	bot                           *tgbotapi.BotAPI
+	pubsubMgr                     *pubsub.PubSub
+	liveSessionInfoDataCaster     caster.ChannelCaster[LiveSessionInfoData]
+	liveStandingDataCaster        caster.ChannelCaster[LiveStandingData]
+	liveStandingHistoryDataCaster caster.ChannelCaster[LiveStandingHistoryData]
 }
 
-func NewManager(ctx context.Context, bot *tgbotapi.BotAPI, domain string, pubsubMgr *pubsub.PubSub) *Manager {
-	return &Manager{
-		ctx:                  ctx,
-		apiDomain:            domain,
-		bot:                  bot,
-		serversCaster:        caster.JSONChannelCaster[[]Server]{},
-		sessionInfoCaster:    caster.JSONChannelCaster[SessionInfo]{},
-		driversSessionCaster: caster.JSONChannelCaster[DriversSession]{},
-		stintDataCaster:      caster.JSONChannelCaster[StintData]{},
-		pubsubMgr:            pubsubMgr,
+func NewManager(ctx context.Context, bot *tgbotapi.BotAPI, servers []Server, pubsubMgr *pubsub.PubSub) (*Manager, error) {
+	m := &Manager{
+		ctx:                           ctx,
+		bot:                           bot,
+		servers:                       servers,
+		liveSessionInfoDataCaster:     caster.JSONChannelCaster[LiveSessionInfoData]{},
+		liveStandingDataCaster:        caster.JSONChannelCaster[LiveStandingData]{},
+		liveStandingHistoryDataCaster: caster.JSONChannelCaster[LiveStandingHistoryData]{},
+		pubsubMgr:                     pubsubMgr,
 	}
-}
 
-func (sm *Manager) Lock() {
-	sm.mu.Lock()
-}
-
-func (sm *Manager) Unlock() {
-	sm.mu.Unlock()
+	err := m.initializeServers()
+	return m, err
 }
 
 func (sm *Manager) Sync(ticker *time.Ticker, exitChan chan bool) {
@@ -65,100 +56,64 @@ func (sm *Manager) Sync(ticker *time.Ticker, exitChan chan bool) {
 }
 
 func (sm *Manager) doSync(t time.Time) {
-	// fmt.Println("Refreshing servers statuses: ", t)
-	ss := sm.checkServersOnline()
-	payload, err := sm.serversCaster.To(ss)
-	if err != nil {
-		log.Printf("Error casting servers to json: %s", err.Error())
-	} else {
-		sm.pubsubMgr.Publish(PubSubServersTopic, payload)
+	sm.checkServersOnline()
+}
+
+func (sm *Manager) initializeServers() error {
+	// set up the goroutine to publish live data
+	for i := range sm.servers {
+		sm.servers[i].Name = sm.servers[i].ID
+		sm.servers[i].BestSector3ForDriver = make(map[string]float64)
+		sm.servers[i].LiveSessionInfoDataChan = make(chan LiveSessionInfoData)
+		sm.servers[i].LiveStandingChan = make(chan LiveStandingData)
+		sm.servers[i].LiveStandingHistoryChan = make(chan LiveStandingHistoryData)
+
+		go func(idx int) {
+			for liveSessionInfo := range sm.servers[idx].LiveSessionInfoDataChan {
+				payload, err := sm.liveSessionInfoDataCaster.To(liveSessionInfo)
+				if err != nil {
+					log.Printf("Error casting session info to json: %s", err.Error())
+				} else {
+					sm.pubsubMgr.Publish(PubSubSessionInfoPreffix+sm.servers[idx].ID, payload)
+				}
+			}
+		}(i)
+		go func(idx int) {
+			for liveTiming := range sm.servers[idx].LiveStandingChan {
+				payload, err := sm.liveStandingDataCaster.To(liveTiming)
+				if err != nil {
+					log.Printf("Error casting live standing to json: %s", err.Error())
+				} else {
+					sm.pubsubMgr.Publish(PubSubDriversSessionPreffix+sm.servers[idx].ID, payload)
+				}
+			}
+		}(i)
+		go func(idx int) {
+			for liveStanding := range sm.servers[idx].LiveStandingHistoryChan {
+				payload, err := sm.liveStandingHistoryDataCaster.To(liveStanding)
+				if err != nil {
+					log.Printf("Error casting live standing history to json: %s", err.Error())
+				} else {
+					sm.pubsubMgr.Publish(PubSubStintDataPreffix+sm.servers[idx].ID, payload)
+				}
+			}
+		}(i)
 	}
+
+	return nil
 }
 
-func (sm *Manager) GetInitialServers() ([]Server, error) {
-	return getServers(sm.ctx, sm.apiDomain)
-}
-
-// func (sm *Manager) GetServers() ([]Server, error) {
-// 	if len(sm.servers) == 0 {
-// 		// if there is no servers, fetch them
-// 		ss, err := getServers(sm.ctx, sm.apiDomain)
-// 		if err != nil {
-// 			return ss, err
-// 		}
-// 		sm.servers = ss
-// 	}
-
-// 	return sm.servers, nil
-// }
-
-// func (sm *Manager) GetServerById(id string) (Server, bool) {
-// 	for _, s := range sm.servers {
-// 		if s.ID == id {
-// 			return s, true
-// 		}
-// 	}
-// 	return Server{}, false
-// }
-
-func (sm *Manager) checkServersOnline() []Server {
+func (sm *Manager) checkServersOnline() {
 	wg := sync.WaitGroup{}
-	ss, _ := sm.GetInitialServers()
-	for i := range ss {
+	for i := range sm.servers {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			// get session info
-			sessionInfo, err := ss[idx].GetSessionInfo(sm.ctx)
-
-			sessionInfo.TimeToEnd = "02h 44m"
-
-			sessionInfo.ServerID = ss[idx].ID
-			if err != nil {
-				sessionInfo.Online = false
-				log.Printf("Error checking server %s: %s", ss[idx].Name, err.Error())
-			} else {
-				ss[idx].Online = true
-				ss[idx].Name = sessionInfo.ServerName
+			if !sm.servers[idx].WebSocketRunning {
+				// set up the ws client
+				go func() { _ = sm.servers[idx].WebSocketReader(sm.ctx) }()
 			}
-			sessionInfo.Online = ss[idx].Online
-			payload, err := sm.sessionInfoCaster.To(sessionInfo)
-			if err != nil {
-				log.Printf("Error casting servers to json: %s", err.Error())
-			} else {
-				sm.pubsubMgr.Publish(ss[idx].ID, payload)
-			}
-
-			// get driver sessions
-			if sessionInfo.Online {
-				dss, err := ss[idx].GetDriverSessions(sm.ctx)
-				if err != nil {
-					log.Printf("Error getting driver sessions: %s", err.Error())
-				}
-				payload, err := sm.driversSessionCaster.To(dss)
-				if err != nil {
-					log.Printf("Error casting driver sessions to json: %s", err.Error())
-				} else {
-					sm.pubsubMgr.Publish(PubSubDriversSessionPreffix+ss[idx].ID, payload)
-				}
-			}
-
-			// get stints
-			if sessionInfo.Online {
-				sd, err := ss[idx].GetStintData(sm.ctx)
-				if err != nil {
-					log.Printf("Error getting stint data: %s", err.Error())
-				}
-				payload, err := sm.stintDataCaster.To(sd)
-				if err != nil {
-					log.Printf("Error casting stint data to json: %s", err.Error())
-				} else {
-					sm.pubsubMgr.Publish(PubSubStintDataPreffix+ss[idx].ID, payload)
-				}
-			}
-
 		}(i)
 	}
 	wg.Wait()
-	return ss
 }

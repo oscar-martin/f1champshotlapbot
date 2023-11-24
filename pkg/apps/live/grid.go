@@ -23,14 +23,14 @@ const (
 )
 
 type GridApp struct {
-	bot                      *tgbotapi.BotAPI
-	appMenu                  menus.ApplicationMenu
-	serverID                 string
-	driversSession           servers.DriversSession
-	driversSessionUpdateChan <-chan string
-	caster                   caster.ChannelCaster[servers.DriversSession]
-	mu                       sync.Mutex
-	menuKeyboard             tgbotapi.ReplyKeyboardMarkup
+	bot                        *tgbotapi.BotAPI
+	appMenu                    menus.ApplicationMenu
+	serverID                   string
+	liveStandingData           servers.LiveStandingData
+	liveStandingDataUpdateChan <-chan string
+	caster                     caster.ChannelCaster[servers.LiveStandingData]
+	mu                         sync.Mutex
+	menuKeyboard               tgbotapi.ReplyKeyboardMarkup
 }
 
 func NewGridApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, pubsubMgr *pubsub.PubSub, serverID string) *GridApp {
@@ -41,12 +41,12 @@ func NewGridApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, pubsubMgr *
 	)
 
 	ga := &GridApp{
-		bot:                      bot,
-		appMenu:                  appMenu,
-		serverID:                 serverID,
-		caster:                   caster.JSONChannelCaster[servers.DriversSession]{},
-		driversSessionUpdateChan: pubsubMgr.Subscribe(servers.PubSubDriversSessionPreffix + serverID),
-		menuKeyboard:             menuKeyboard,
+		bot:                        bot,
+		appMenu:                    appMenu,
+		serverID:                   serverID,
+		caster:                     caster.JSONChannelCaster[servers.LiveStandingData]{},
+		liveStandingDataUpdateChan: pubsubMgr.Subscribe(servers.PubSubDriversSessionPreffix + serverID),
+		menuKeyboard:               menuKeyboard,
 	}
 
 	go ga.updater()
@@ -55,7 +55,7 @@ func NewGridApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, pubsubMgr *
 }
 
 func (ga *GridApp) updater() {
-	for payload := range ga.driversSessionUpdateChan {
+	for payload := range ga.liveStandingDataUpdateChan {
 		// fmt.Println("Updating DriverSessions")
 		dss, err := ga.caster.From(payload)
 		if err != nil {
@@ -66,10 +66,10 @@ func (ga *GridApp) updater() {
 	}
 }
 
-func (ga *GridApp) update(dss servers.DriversSession) {
+func (ga *GridApp) update(lsd servers.LiveStandingData) {
 	ga.mu.Lock()
 	defer ga.mu.Unlock()
-	ga.driversSession = dss
+	ga.liveStandingData = lsd
 }
 
 func (ga *GridApp) AcceptCommand(command string) (bool, func(ctx context.Context, chatId int64) error) {
@@ -93,7 +93,7 @@ func (ga *GridApp) AcceptButton(button string) (bool, func(ctx context.Context, 
 	defer ga.mu.Unlock()
 
 	// fmt.Printf("GRID: button: %s. appName: %s\n", button, buttonGrid+" "+ga.driversSession.ServerName)
-	if button == buttonGrid+" "+ga.driversSession.ServerName {
+	if button == buttonGrid+" "+ga.liveStandingData.ServerName {
 		return true, ga.renderGrid()
 	} else if button == ga.appMenu.ButtonBackTo() {
 		return true, func(ctx context.Context, chatId int64) error {
@@ -109,7 +109,7 @@ func (ga *GridApp) AcceptButton(button string) (bool, func(ctx context.Context, 
 
 func (ga *GridApp) renderGrid() func(ctx context.Context, chatId int64) error {
 	return func(ctx context.Context, chatId int64) error {
-		err := ga.sendSessionData(chatId, nil, ga.driversSession, inlineKeyboardTimes)
+		err := ga.sendSessionData(chatId, nil, ga.liveStandingData, inlineKeyboardBestLap)
 		if err != nil {
 			log.Printf("An error occured: %s", err.Error())
 		}
@@ -119,10 +119,10 @@ func (ga *GridApp) renderGrid() func(ctx context.Context, chatId int64) error {
 
 func (ga *GridApp) handleSessionDataCallbackQuery(chatId int64, messageId *int, data ...string) error {
 	infoType := data[0]
-	return ga.sendSessionData(chatId, messageId, ga.driversSession, infoType)
+	return ga.sendSessionData(chatId, messageId, ga.liveStandingData, infoType)
 }
 
-func (ga *GridApp) sendSessionData(chatId int64, messageId *int, driversSession servers.DriversSession, infoType string) error {
+func (ga *GridApp) sendSessionData(chatId int64, messageId *int, driversSession servers.LiveStandingData, infoType string) error {
 	if len(driversSession.Drivers) > 0 {
 		var b bytes.Buffer
 		t := table.NewWriter()
@@ -130,43 +130,147 @@ func (ga *GridApp) sendSessionData(chatId int64, messageId *int, driversSession 
 		t.SetStyle(table.StyleRounded)
 		t.AppendSeparator()
 
-		t.AppendHeader(table.Row{tableDriver, infoType})
-		for _, driverStat := range driversSession.Drivers {
+		switch infoType {
+		case inlineKeyboardStatus:
+			t.AppendHeader(table.Row{tableDriver, "Sectores", "S" /*, "FUEL"*/})
+		case inlineKeyboardInfo:
+			t.AppendHeader(table.Row{tableDriver, "Nombre" /*, "Núm"*/, "Lap"})
+		case inlineKeyboardLastLap:
+			t.AppendHeader(table.Row{tableDriver, "Última", "Mejor"})
+		case inlineKeyboardOptimumLap:
+			t.AppendHeader(table.Row{tableDriver, "Óptimo", "Mejor"})
+		default:
+			t.AppendHeader(table.Row{tableDriver, infoType})
+		}
+		for idx, driverStat := range driversSession.Drivers {
 			switch infoType {
-			case inlineKeyboardTimes:
+			case inlineKeyboardStatus:
+				state := ""
+				if driverStat.InGarageStall {
+					state = "P"
+				} else if driverStat.Pitting {
+					state = "P"
+				}
+				var s1 float64
+				s2 := -1.0
+				s3 := -1.0
+				if driverStat.CurrentSectorTime1 > 0.0 {
+					// s1 is done in current lap
+					s1 = driverStat.CurrentSectorTime1
+					if s1 > 0.0 && driverStat.CurrentSectorTime2 > 0.0 {
+						// s2 is done in current lap
+						s2 = driverStat.CurrentSectorTime2 - s1
+					}
+				} else {
+					s1 = driverStat.LastSectorTime1
+					if s1 > 0.0 && driverStat.LastSectorTime2 > 0.0 {
+						s2 = driverStat.LastSectorTime2 - s1
+					}
+					if s2 > 0.0 && driverStat.LastLapTime > 0.0 {
+						s3 = driverStat.LastLapTime - s2 - s1
+					}
+				}
 				t.AppendRow([]interface{}{
-					helper.GetDriverCodeName(driverStat.Driver),
-					helper.SecondsToMinutes(driverStat.Time),
+					helper.GetDriverCodeName(driverStat.DriverName),
+					fmt.Sprintf("%s %s %s", helper.ToSectorTime(s1), helper.ToSectorTime(s2), helper.ToSectorTime(s3)),
+					// fmt.Sprintf("%.0f%%", driverStat.FuelFraction*100),
+					state,
 				})
-			case inlineKeyboardSectors:
+			case inlineKeyboardInfo:
 				t.AppendRow([]interface{}{
-					helper.GetDriverCodeName(driverStat.Driver),
-					fmt.Sprintf("%s %s %s", helper.ToSectorTime(driverStat.S1), helper.ToSectorTime(driverStat.S2), helper.ToSectorTime(driverStat.S3)),
+					helper.GetDriverCodeName(driverStat.DriverName),
+					driverStat.DriverName,
+					// driverStat.CarNumber,
+					driverStat.LapsCompleted,
 				})
-			case inlineKeyboardCompound:
+			case inlineKeyboardDiff:
+				diff := ""
+				if idx == 0 {
+					diff = helper.SecondsToMinutes(driverStat.BestLapTime)
+				} else {
+					diff = helper.SecondsToDiff(driverStat.BestLapTime - driversSession.Drivers[0].BestLapTime)
+				}
 				t.AppendRow([]interface{}{
-					helper.GetDriverCodeName(driverStat.Driver),
-					driverStat.Compound,
+					helper.GetDriverCodeName(driverStat.DriverName),
+					diff,
+				})
+			case inlineKeyboardBestLap:
+				t.AppendRow([]interface{}{
+					helper.GetDriverCodeName(driverStat.DriverName),
+					helper.SecondsToMinutes(driverStat.BestLapTime),
+				})
+			case inlineKeyboardLastLap:
+				t.AppendRow([]interface{}{
+					helper.GetDriverCodeName(driverStat.DriverName),
+					helper.SecondsToMinutes(driverStat.LastLapTime),
+					helper.SecondsToMinutes(driverStat.BestLapTime),
+				})
+			case inlineKeyboardOptimumLap:
+				optimumLap := -1.0
+				if driverStat.BestSectorTime2 > 0.0 && driverStat.BestSectorTime3 > 0.0 {
+					optimumLap = driverStat.BestSectorTime2 + driverStat.BestSectorTime3
+				}
+				t.AppendRow([]interface{}{
+					helper.GetDriverCodeName(driverStat.DriverName),
+					helper.SecondsToMinutes(optimumLap),
+					helper.SecondsToMinutes(driverStat.BestLapTime),
+				})
+			case inlineKeyboardBestLapSectors:
+				bs1 := driverStat.BestLapSectorTime1
+				bs2 := -1.0
+				if bs1 > 0.0 {
+					bs2 = driverStat.BestLapSectorTime2 - bs1
+				}
+				bs3 := -1.0
+				if bs2 > 0.0 && driverStat.BestLapTime > 0.0 {
+					bs3 = driverStat.BestLapTime - bs2 - bs1
+				}
+				t.AppendRow([]interface{}{
+					helper.GetDriverCodeName(driverStat.DriverName),
+					fmt.Sprintf("%s %s %s", helper.ToSectorTime(bs1), helper.ToSectorTime(bs2), helper.ToSectorTime(bs3)),
+				})
+			case inlineKeyboardLastLapSectors:
+				ls1 := driverStat.LastSectorTime1
+				ls2 := -1.0
+				if ls1 > 0.0 && driverStat.LastSectorTime2 > 0.0 {
+					ls2 = driverStat.LastSectorTime2 - ls1
+				}
+				ls3 := -1.0
+				if ls2 > 0.0 && driverStat.LastLapTime > 0.0 {
+					ls3 = driverStat.LastLapTime - ls2 - ls1
+				}
+				t.AppendRow([]interface{}{
+					helper.GetDriverCodeName(driverStat.DriverName),
+					fmt.Sprintf("%s %s %s", helper.ToSectorTime(ls1), helper.ToSectorTime(ls2), helper.ToSectorTime(ls3)),
+				})
+			case inlineKeyboardOptimumLapSectors:
+				ls1 := driverStat.BestSectorTime1
+				ls2 := -1.0
+				if ls1 > 0.0 && driverStat.BestSectorTime2 > 0.0 {
+					ls2 = driverStat.BestSectorTime2 - ls1
+				}
+				ls3 := -1.0
+				if driverStat.BestSectorTime3 > 0.0 {
+					ls3 = driverStat.BestSectorTime3
+				}
+				t.AppendRow([]interface{}{
+					helper.GetDriverCodeName(driverStat.DriverName),
+					fmt.Sprintf("%s %s %s", helper.ToSectorTime(ls1), helper.ToSectorTime(ls2), helper.ToSectorTime(ls3)),
 				})
 			case inlineKeyboardLaps:
 				t.AppendRow([]interface{}{
-					helper.GetDriverCodeName(driverStat.Driver),
-					fmt.Sprintf("%d/%d", driverStat.Lapcountcomplete, driverStat.Lapcount),
+					helper.GetDriverCodeName(driverStat.DriverName),
+					fmt.Sprintf("%d", driverStat.LapsCompleted),
 				})
 			case inlineKeyboardTeam:
 				t.AppendRow([]interface{}{
-					helper.GetDriverCodeName(driverStat.Driver),
+					helper.GetDriverCodeName(driverStat.DriverName),
 					driverStat.CarClass,
 				})
 			case inlineKeyboardDriver:
 				t.AppendRow([]interface{}{
-					helper.GetDriverCodeName(driverStat.Driver),
-					driverStat.Driver,
-				})
-			case inlineKeyboardDiff:
-				t.AppendRow([]interface{}{
-					helper.GetDriverCodeName(driverStat.Driver),
-					fmt.Sprintf("%.1fs", driverStat.Diff),
+					helper.GetDriverCodeName(driverStat.DriverName),
+					driverStat.DriverName,
 				})
 			}
 		}
@@ -198,20 +302,21 @@ func (ga *GridApp) sendSessionData(chatId int64, messageId *int, driversSession 
 func getInlineKeyboard(serverID string) tgbotapi.InlineKeyboardMarkup {
 	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardTimes+" "+symbolTimes, fmt.Sprintf("%s:%s:%s", subcommandShowLiveTiming, serverID, inlineKeyboardTimes)),
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardDiff+" "+symbolDiff, fmt.Sprintf("%s:%s:%s", subcommandShowLiveTiming, serverID, inlineKeyboardDiff)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardBestLap+" "+symbolTimes, fmt.Sprintf("%s:%s:%s", subcommandShowLiveTiming, serverID, inlineKeyboardBestLap)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardBestLapSectors, fmt.Sprintf("%s:%s:%s", subcommandShowLiveTiming, serverID, inlineKeyboardBestLapSectors)),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardSectors+" "+symbolSectors, fmt.Sprintf("%s:%s:%s", subcommandShowLiveTiming, serverID, inlineKeyboardSectors)),
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardCompound+" "+symbolTimes, fmt.Sprintf("%s:%s:%s", subcommandShowLiveTiming, serverID, inlineKeyboardCompound)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardLastLap+" "+symbolTimes, fmt.Sprintf("%s:%s:%s", subcommandShowLiveTiming, serverID, inlineKeyboardLastLap)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardLastLapSectors, fmt.Sprintf("%s:%s:%s", subcommandShowLiveTiming, serverID, inlineKeyboardLastLapSectors)),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardLaps+" "+symbolLaps, fmt.Sprintf("%s:%s:%s", subcommandShowLiveTiming, serverID, inlineKeyboardLaps)),
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardTeam+" "+symbolTeam, fmt.Sprintf("%s:%s:%s", subcommandShowLiveTiming, serverID, inlineKeyboardTeam)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardOptimumLap+" "+symbolTimes, fmt.Sprintf("%s:%s:%s", subcommandShowLiveTiming, serverID, inlineKeyboardOptimumLap)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardOptimumLapSectors, fmt.Sprintf("%s:%s:%s", subcommandShowLiveTiming, serverID, inlineKeyboardOptimumLapSectors)),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardDriver+" "+symbolDriver, fmt.Sprintf("%s:%s:%s", subcommandShowLiveTiming, serverID, inlineKeyboardDriver)),
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardUpdate+" "+symbolUpdate, fmt.Sprintf("%s:%s:%s", subcommandShowLiveTiming, serverID, inlineKeyboardSectors)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardStatus, fmt.Sprintf("%s:%s:%s", subcommandShowLiveTiming, serverID, inlineKeyboardStatus)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardInfo, fmt.Sprintf("%s:%s:%s", subcommandShowLiveTiming, serverID, inlineKeyboardInfo)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardDiff, fmt.Sprintf("%s:%s:%s", subcommandShowLiveTiming, serverID, inlineKeyboardDiff)),
 		),
 	)
 }

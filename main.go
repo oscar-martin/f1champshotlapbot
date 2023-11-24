@@ -4,6 +4,8 @@ import (
 	"context"
 	"f1champshotlapsbot/pkg/apps"
 	"f1champshotlapsbot/pkg/apps/mainapp"
+	"f1champshotlapsbot/pkg/servers"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -19,6 +21,9 @@ import (
 const (
 	EnvTelegramToken = "TELEGRAM_TOKEN"
 	EnvHotlapsDomain = "API_DOMAIN"
+	// format: <server_id>,<server_url>;<server_id>,<server_url>;...
+	// format example: "ServerID1,http://localhost:10001;ServerID2,http://localhost:10002;ServerID3,http://localhost:10003"
+	EnvServers = "RF2_SERVERS"
 )
 
 var (
@@ -39,8 +44,12 @@ func main() {
 	if domain == "" {
 		log.Fatalf("%s is not set", EnvHotlapsDomain)
 	}
-
 	domain = strings.TrimRight(domain, "/")
+
+	rf2Servers := os.Getenv(EnvServers)
+	if rf2Servers == "" {
+		log.Fatalf("%s is not set", EnvServers)
+	}
 
 	bot, err = tgbotapi.NewBotAPI(token)
 	if err != nil {
@@ -68,7 +77,7 @@ func main() {
 
 	// TODO: remove this
 	// ---------------------
-	CreateServers([]int{10001, 10002, 10004})
+	// CreateServers([]int{10001, 10002, 10004})
 	// ---------------------
 
 	exitChan := make(chan bool)
@@ -76,7 +85,14 @@ func main() {
 	refreshServersTicker := time.NewTicker(10 * time.Second)
 
 	// build the main app
-	app = mainapp.NewMainApp(ctx, bot, domain, pubsubMgr, exitChan, refreshHotlapsTicker, refreshServersTicker)
+	ss, err := createServers(rf2Servers)
+	if err != nil {
+		log.Fatalf("Error creating servers: %s", err.Error())
+	}
+	app, err = mainapp.NewMainApp(ctx, bot, domain, ss, pubsubMgr, exitChan, refreshHotlapsTicker, refreshServersTicker)
+	if err != nil {
+		log.Fatalf("Error creating main app: %s", err.Error())
+	}
 
 	// Tell the user the bot is online
 	log.Println("Start listening for updates. Press Ctrl-C to stop it")
@@ -92,6 +108,23 @@ func main() {
 	exitChan <- true
 
 	cancel()
+}
+
+func createServers(rf2Servers string) ([]servers.Server, error) {
+	serversStr := strings.Split(rf2Servers, ";")
+	ss := []servers.Server{}
+	for _, serverStr := range serversStr {
+		serverData := strings.Split(serverStr, ",")
+		if len(serverData) != 2 {
+			return nil, fmt.Errorf("Invalid server data: %s", serverStr)
+		}
+		server := servers.Server{
+			ID:  serverData[0],
+			URL: serverData[1],
+		}
+		ss = append(ss, server)
+	}
+	return ss, nil
 }
 
 func receiveUpdates(ctx context.Context, updates tgbotapi.UpdatesChannel) {

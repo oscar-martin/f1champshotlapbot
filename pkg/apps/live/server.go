@@ -37,6 +37,7 @@ type ServerApp struct {
 func sanitizeServerName(name string) string {
 	fixed := strings.TrimPrefix(name, servers.ServerStatusOnline)
 	fixed = strings.TrimPrefix(fixed, servers.ServerStatusOffline)
+	fixed = strings.TrimPrefix(fixed, servers.ServerStatusOnlineButNotData)
 	return strings.TrimSpace(fixed)
 }
 

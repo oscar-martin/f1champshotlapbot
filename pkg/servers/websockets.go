@@ -19,7 +19,7 @@ const (
 	mtSessionInfo     = "sessionInfo"
 )
 
-type MessageHistory struct {
+type Message struct {
 	MessageType string `json:"type"`
 	Body        any    `json:"body,omitempty"`
 }
@@ -216,9 +216,9 @@ func (s *Server) WebSocketReader(ctx context.Context) error {
 
 	defer func() {
 		// init channels
-		s.sendZeroData()
 		s.WebSocketRunning = false
 		s.RecevingData = false
+		s.sendZeroData()
 	}()
 
 	// init channels
@@ -245,16 +245,40 @@ func (s *Server) WebSocketReader(ctx context.Context) error {
 	defer c.Close()
 	doneErr := make(chan error)
 
+	messageChan := make(chan Message)
+	go s.dispatchMessage(ctx, messageChan, doneErr)
+
 	go func() {
 		defer close(doneErr)
 		for {
-			var m MessageHistory
+			var m Message
 			err = c.ReadJSON(&m)
 			if err != nil {
 				log.Println("read error:", err)
 				doneErr <- err
 				return
 			}
+			messageChan <- m
+		}
+	}()
+	return <-doneErr
+}
+
+func (s *Server) dispatchMessage(ctx context.Context, messageChan <-chan Message, doneChan <-chan error) {
+	timeoutTime := 5 * time.Second
+	timeout := time.After(timeoutTime)
+
+	for {
+		select {
+		case <-doneChan:
+			return
+		case <-timeout:
+			// fmt.Printf("timeout waiting for message: %s\n", s.Name)
+			s.RecevingData = false
+			s.sendZeroData()
+			timeout = time.After(timeoutTime)
+		case m := <-messageChan:
+			timeout = time.After(timeoutTime)
 			s.RecevingData = true
 			if m.MessageType == mtStandingHistory {
 				body := map[string][]StandingHistoryDriverData{}
@@ -300,43 +324,53 @@ func (s *Server) WebSocketReader(ctx context.Context) error {
 				s.LiveSessionInfoDataChan <- s.fromMessageToLiveSessionInfoData(s.Name, s.ID, &body)
 			}
 		}
-	}()
-	return <-doneErr
+	}
 }
 
 func (s *Server) fromMessageToLiveStandingHistoryData(serverName, serverID string, m *map[string][]StandingHistoryDriverData) LiveStandingHistoryData {
 	driversDataMap := map[string][]StandingHistoryDriverData{}
 	// get driver names from map
 	driverNames := []string{}
-	for _, v := range *m {
-		if len(v) > 0 {
-			driverNames = append(driverNames, v[0].DriverName)
-			driversDataMap[v[0].DriverName] = v
+	for _, driversData := range *m {
+		if len(driversData) > 0 {
+			driverNames = append(driverNames, driversData[0].DriverName)
+			driversDataMap[driversData[0].DriverName] = driversData
 
-			{ // calculate the best sector 3
-				for i := range v {
-					lastSector3 := -1.0
-					if v[i].LapTime > 0.0 &&
-						v[i].SectorTime1 > 0.0 &&
-						v[i].SectorTime2 > 0.0 {
-						lastSector3 = v[i].LapTime - v[i].SectorTime2
-					}
-					if v[i].TotalLaps <= 1 {
-						s.BestSector3ForDriver[v[i].DriverName] = -1.0
-						continue
-					}
-					bestSector3 := s.BestSector3ForDriver[v[i].DriverName]
-
-					if lastSector3 > 0.0 {
-						if bestSector3 <= 0.0 {
-							s.BestSector3ForDriver[v[i].DriverName] = lastSector3
-						} else if lastSector3 < bestSector3 {
-							s.BestSector3ForDriver[v[i].DriverName] = lastSector3
-						}
-					}
+			bestS1 := 0.0
+			bestS2 := 0.0
+			bestS3 := 0.0
+			for i := range driversData {
+				s1 := driversData[i].SectorTime1
+				s2 := -1.0
+				if s1 > 0.0 && driversData[i].SectorTime2 > 0.0 {
+					s2 = driversData[i].SectorTime2 - s1
+				}
+				s3 := -1.0
+				if s2 > 0.0 && driversData[i].LapTime > 0.0 {
+					s3 = driversData[i].LapTime - s2 - s1
+				}
+				if bestS1 <= 0.0 {
+					bestS1 = s1
+				} else if s1 > 0.0 && s1 < bestS1 {
+					bestS1 = s1
+				}
+				if bestS2 <= 0.0 {
+					bestS2 = s2
+				} else if s2 > 0.0 && s2 < bestS2 {
+					bestS2 = s2
+				}
+				if bestS3 <= 0.0 {
+					bestS3 = s3
+				} else if s3 > 0.0 && s3 < bestS3 {
+					bestS3 = s3
 				}
 			}
 
+			s.BestSectorsForDriver[driversData[0].DriverName] = Sectors{
+				Sector1: bestS1,
+				Sector2: bestS2,
+				Sector3: bestS3,
+			}
 		}
 	}
 
@@ -368,8 +402,13 @@ func (s *Server) fromMessageToLiveStandingData(serverName, serverID string, data
 	})
 
 	for i := range data {
-		{ // calculate the best sector 3
-			data[i].BestSectorTime3 = s.BestSector3ForDriver[data[i].DriverName]
+		{
+			bestSectors, found := s.BestSectorsForDriver[data[i].DriverName]
+			if found {
+				data[i].BestSectorTime1 = bestSectors.Sector1
+				data[i].BestSectorTime2 = bestSectors.Sector2
+				data[i].BestSectorTime3 = bestSectors.Sector3
+			}
 		}
 	}
 

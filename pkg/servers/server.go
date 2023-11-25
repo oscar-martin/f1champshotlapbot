@@ -5,15 +5,22 @@ import (
 )
 
 const (
-	serverCheckHttpPath = "/"
-	ServerStatusOffline = "🔴"
-	ServerStatusOnline  = "🟢"
-	ServerPrefixCommand = "Server"
+	serverCheckHttpPath          = "/"
+	ServerStatusOffline          = "🔴"
+	ServerStatusOnline           = "🟢"
+	ServerStatusOnlineButNotData = "🟡"
+	ServerPrefixCommand          = "Server"
 
 	PubSubSessionInfoPreffix    = "sessionInfo-"
 	PubSubDriversSessionPreffix = "driversSession-"
 	PubSubStintDataPreffix      = "stintData-"
 )
+
+type Sectors struct {
+	Sector1 float64 `json:"sector1"`
+	Sector2 float64 `json:"sector2"`
+	Sector3 float64 `json:"sector3"`
+}
 
 type Server struct {
 	ID                      string `json:"id"`
@@ -21,24 +28,24 @@ type Server struct {
 	Name                    string
 	WebSocketRunning        bool
 	RecevingData            bool
-	BestSector3ForDriver    map[string]float64
+	BestSectorsForDriver    map[string]Sectors
 	LiveSessionInfoDataChan chan LiveSessionInfoData     `json:"-"`
 	LiveStandingHistoryChan chan LiveStandingHistoryData `json:"-"`
 	LiveStandingChan        chan LiveStandingData        `json:"-"`
 }
 
-func (s Server) StatusAndName() string {
+func (s Server) Status() string {
 	status := ServerStatusOffline
 	if s.WebSocketRunning {
-		status = ServerStatusOnline
+		if s.RecevingData {
+			status = ServerStatusOnline
+		} else {
+			status = ServerStatusOnlineButNotData
+		}
 	}
-	return fmt.Sprintf("%s %s", status, s.Name)
+	return status
 }
 
-func (s Server) CommandString(commandPrefix string) string {
-	status := ServerStatusOffline
-	if s.WebSocketRunning {
-		status = ServerStatusOnline
-	}
-	return fmt.Sprintf(" ▸ %s %s ➡ %s_%s", status, s.Name, commandPrefix, s.ID)
+func (s Server) StatusAndName() string {
+	return fmt.Sprintf("%s %s", s.Status(), s.Name)
 }

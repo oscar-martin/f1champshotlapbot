@@ -207,13 +207,21 @@ func (ga *GridApp) sendSessionData(chatId int64, messageId *int, driversSession 
 				})
 			case inlineKeyboardOptimumLap:
 				optimumLap := -1.0
-				if driverStat.BestSectorTime2 > 0.0 && driverStat.BestSectorTime3 > 0.0 {
-					optimumLap = driverStat.BestSectorTime2 + driverStat.BestSectorTime3
+				if driverStat.BestSectorTime1 > 0.0 && driverStat.BestSectorTime2 > 0.0 && driverStat.BestSectorTime3 > 0.0 {
+					optimumLap = driverStat.BestSectorTime1 + driverStat.BestSectorTime2 + driverStat.BestSectorTime3
 				}
 				t.AppendRow([]interface{}{
 					helper.GetDriverCodeName(driverStat.DriverName),
 					helper.SecondsToMinutes(optimumLap),
 					helper.SecondsToMinutes(driverStat.BestLapTime),
+				})
+			case inlineKeyboardOptimumLapSectors:
+				ls1 := driverStat.BestSectorTime1
+				ls2 := driverStat.BestSectorTime2
+				ls3 := driverStat.BestSectorTime3
+				t.AppendRow([]interface{}{
+					helper.GetDriverCodeName(driverStat.DriverName),
+					fmt.Sprintf("%s %s %s", helper.ToSectorTime(ls1), helper.ToSectorTime(ls2), helper.ToSectorTime(ls3)),
 				})
 			case inlineKeyboardBestLapSectors:
 				bs1 := driverStat.BestLapSectorTime1
@@ -238,20 +246,6 @@ func (ga *GridApp) sendSessionData(chatId int64, messageId *int, driversSession 
 				ls3 := -1.0
 				if ls2 > 0.0 && driverStat.LastLapTime > 0.0 {
 					ls3 = driverStat.LastLapTime - ls2 - ls1
-				}
-				t.AppendRow([]interface{}{
-					helper.GetDriverCodeName(driverStat.DriverName),
-					fmt.Sprintf("%s %s %s", helper.ToSectorTime(ls1), helper.ToSectorTime(ls2), helper.ToSectorTime(ls3)),
-				})
-			case inlineKeyboardOptimumLapSectors:
-				ls1 := driverStat.BestSectorTime1
-				ls2 := -1.0
-				if ls1 > 0.0 && driverStat.BestSectorTime2 > 0.0 {
-					ls2 = driverStat.BestSectorTime2 - ls1
-				}
-				ls3 := -1.0
-				if driverStat.BestSectorTime3 > 0.0 {
-					ls3 = driverStat.BestSectorTime3
 				}
 				t.AppendRow([]interface{}{
 					helper.GetDriverCodeName(driverStat.DriverName),

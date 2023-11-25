@@ -63,7 +63,7 @@ func (sm *Manager) initializeServers() error {
 	// set up the goroutine to publish live data
 	for i := range sm.servers {
 		sm.servers[i].Name = sm.servers[i].ID
-		sm.servers[i].BestSector3ForDriver = make(map[string]float64)
+		sm.servers[i].BestSectorsForDriver = make(map[string]Sectors)
 		sm.servers[i].LiveSessionInfoDataChan = make(chan LiveSessionInfoData)
 		sm.servers[i].LiveStandingChan = make(chan LiveStandingData)
 		sm.servers[i].LiveStandingHistoryChan = make(chan LiveStandingHistoryData)
@@ -111,7 +111,12 @@ func (sm *Manager) checkServersOnline() {
 			defer wg.Done()
 			if !sm.servers[idx].WebSocketRunning {
 				// set up the ws client
-				go func() { _ = sm.servers[idx].WebSocketReader(sm.ctx) }()
+				go func() {
+					err := sm.servers[idx].WebSocketReader(sm.ctx)
+					if err != nil {
+						log.Printf("Error reading websocket: %s", err.Error())
+					}
+				}()
 			}
 		}(i)
 	}

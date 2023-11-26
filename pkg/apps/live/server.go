@@ -18,6 +18,7 @@ import (
 const (
 	buttonStint = "Tanda"
 	buttonGrid  = "Parrilla"
+	buttonInfo  = "Info"
 )
 
 type ServerApp struct {
@@ -69,6 +70,7 @@ func NewServerApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, pubsubMgr
 func (sa *ServerApp) update(lsid servers.LiveSessionInfoData) {
 	stint := buttonStint + " " + lsid.ServerName
 	grid := buttonGrid + " " + lsid.ServerName
+	info := buttonInfo + " " + lsid.ServerName
 	menuKeyboard := tgbotapi.NewReplyKeyboard(
 		tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton(stint),
@@ -76,6 +78,7 @@ func (sa *ServerApp) update(lsid servers.LiveSessionInfoData) {
 		),
 		tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton(sa.appMenu.ButtonBackTo()),
+			tgbotapi.NewKeyboardButton(info),
 		),
 	)
 
@@ -128,7 +131,8 @@ func (sa *ServerApp) AcceptButton(button string) (bool, func(ctx context.Context
 	defer sa.mu.Unlock()
 
 	// fmt.Printf("SERVER: button: %s. appName: %s\n", button, sa.sessionInfo.ServerName)
-	if sanitizeServerName(button) == sa.liveSessionInfoData.ServerName {
+	if sanitizeServerName(button) == sa.liveSessionInfoData.ServerName ||
+		sanitizeServerName(button) == buttonInfo+" "+sa.liveSessionInfoData.ServerName {
 		return true, func(ctx context.Context, chatId int64) error {
 			if !sa.liveSessionInfoData.SessionInfo.WebSocketRunning {
 				msg := tgbotapi.NewMessage(chatId, fmt.Sprintf("El servidor %s está apagado", sa.liveSessionInfoData.ServerName))

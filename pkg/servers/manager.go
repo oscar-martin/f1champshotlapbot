@@ -21,16 +21,18 @@ type Manager struct {
 	servers                       []Server
 	bot                           *tgbotapi.BotAPI
 	pubsubMgr                     *pubsub.PubSub
+	newSessionChannel             chan<- ServerStarted
 	liveSessionInfoDataCaster     caster.ChannelCaster[LiveSessionInfoData]
 	liveStandingDataCaster        caster.ChannelCaster[LiveStandingData]
 	liveStandingHistoryDataCaster caster.ChannelCaster[LiveStandingHistoryData]
 }
 
-func NewManager(ctx context.Context, bot *tgbotapi.BotAPI, servers []Server, pubsubMgr *pubsub.PubSub) (*Manager, error) {
+func NewManager(ctx context.Context, bot *tgbotapi.BotAPI, servers []Server, pubsubMgr *pubsub.PubSub, newSessionChannel chan<- ServerStarted) (*Manager, error) {
 	m := &Manager{
 		ctx:                           ctx,
 		bot:                           bot,
 		servers:                       servers,
+		newSessionChannel:             newSessionChannel,
 		liveSessionInfoDataCaster:     caster.JSONChannelCaster[LiveSessionInfoData]{},
 		liveStandingDataCaster:        caster.JSONChannelCaster[LiveStandingData]{},
 		liveStandingHistoryDataCaster: caster.JSONChannelCaster[LiveStandingHistoryData]{},
@@ -43,16 +45,14 @@ func NewManager(ctx context.Context, bot *tgbotapi.BotAPI, servers []Server, pub
 
 func (sm *Manager) Sync(ticker *time.Ticker, exitChan chan bool) {
 	sm.doSync(time.Now())
-	go func() {
-		for {
-			select {
-			case <-exitChan:
-				return
-			case t := <-ticker.C:
-				sm.doSync(t)
-			}
+	for {
+		select {
+		case <-exitChan:
+			return
+		case t := <-ticker.C:
+			sm.doSync(t)
 		}
-	}()
+	}
 }
 
 func (sm *Manager) doSync(t time.Time) {
@@ -112,7 +112,7 @@ func (sm *Manager) checkServersOnline() {
 			if !sm.servers[idx].WebSocketRunning {
 				// set up the ws client
 				go func() {
-					err := sm.servers[idx].WebSocketReader(sm.ctx)
+					err := sm.servers[idx].WebSocketReader(sm.ctx, sm.newSessionChannel)
 					if err != nil {
 						log.Printf("Error reading websocket: %s", err.Error())
 					}

@@ -64,7 +64,10 @@ func SendSessionData(chatId int64, messageId *int, trackId, categoryId, infoType
 		var b bytes.Buffer
 		t := table.NewWriter()
 		t.SetOutputMirror(&b)
-		t.SetStyle(table.StyleRounded)
+		// t.SetStyle(table.StyleRounded)
+		style := table.StyleRounded
+		style.Options.DrawBorder = false
+		t.SetStyle(style)
 		t.AppendSeparator()
 
 		t.AppendHeader(table.Row{tableDriver, infoType})

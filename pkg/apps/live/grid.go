@@ -127,7 +127,9 @@ func (ga *GridApp) sendSessionData(chatId int64, messageId *int, driversSession 
 		var b bytes.Buffer
 		t := table.NewWriter()
 		t.SetOutputMirror(&b)
-		t.SetStyle(table.StyleRounded)
+		style := table.StyleRounded
+		style.Options.DrawBorder = false
+		t.SetStyle(style)
 		t.AppendSeparator()
 
 		switch infoType {

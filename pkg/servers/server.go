@@ -23,15 +23,16 @@ type Sectors struct {
 }
 
 type Server struct {
-	ID                      string `json:"id"`
-	URL                     string `json:"url"`
-	Name                    string
-	WebSocketRunning        bool
-	RecevingData            bool
-	BestSectorsForDriver    map[string]Sectors
-	LiveSessionInfoDataChan chan LiveSessionInfoData     `json:"-"`
-	LiveStandingHistoryChan chan LiveStandingHistoryData `json:"-"`
-	LiveStandingChan        chan LiveStandingData        `json:"-"`
+	ID                              string `json:"id"`
+	URL                             string `json:"url"`
+	Name                            string
+	WebSocketRunning                bool
+	RecevingData                    bool
+	StartSessionPendingNotification bool
+	BestSectorsForDriver            map[string]Sectors
+	LiveSessionInfoDataChan         chan LiveSessionInfoData     `json:"-"`
+	LiveStandingHistoryChan         chan LiveStandingHistoryData `json:"-"`
+	LiveStandingChan                chan LiveStandingData        `json:"-"`
 }
 
 func (s Server) Status() string {
@@ -48,4 +49,22 @@ func (s Server) Status() string {
 
 func (s Server) StatusAndName() string {
 	return fmt.Sprintf("%s %s", s.Status(), s.Name)
+}
+
+func (s *Server) reset() {
+	s.RecevingData = false
+	s.StartSessionPendingNotification = false
+	s.BestSectorsForDriver = make(map[string]Sectors)
+	{
+		body := map[string][]StandingHistoryDriverData{}
+		s.LiveStandingHistoryChan <- s.fromMessageToLiveStandingHistoryData(s.Name, s.ID, &body)
+	}
+	{
+		body := []StandingDriverData{}
+		s.LiveStandingChan <- s.fromMessageToLiveStandingData(s.Name, s.ID, body)
+	}
+	{
+		body := SessionInfo{}
+		s.LiveSessionInfoDataChan <- s.fromMessageToLiveSessionInfoData(s.Name, s.ID, &body)
+	}
 }

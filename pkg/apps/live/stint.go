@@ -147,7 +147,9 @@ func (sa *StintApp) sendStintData(chatId int64, messageId *int, driverData []ser
 		var b bytes.Buffer
 		t := table.NewWriter()
 		t.SetOutputMirror(&b)
-		t.SetStyle(table.StyleRounded)
+		style := table.StyleRounded
+		style.Options.DrawBorder = false
+		t.SetStyle(style)
 		t.AppendSeparator()
 
 		t.AppendHeader(table.Row{tableLap, infoType})
@@ -205,14 +207,6 @@ func getStintInlineKeyboard(driver, serverID string) tgbotapi.InlineKeyboardMark
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardTimes+" "+symbolTimes, fmt.Sprintf("%s:%s:%s:%s", subcommandShowDrivers, serverID, inlineKeyboardTimes, driver)),
 			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardSectors+" "+symbolSectors, fmt.Sprintf("%s:%s:%s:%s", subcommandShowDrivers, serverID, inlineKeyboardSectors, driver)),
-			// tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardDiff+" "+symbolDiff, fmt.Sprintf("%s:%s:%s:%s", subcommandShowDrivers, serverID, inlineKeyboardDiff, driver)),
-		),
-		// tgbotapi.NewInlineKeyboardRow(
-		// 	tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardBestSectors+" "+symbolSectors, fmt.Sprintf("%s:%s:%s:%s", subcommandShowDrivers, serverID, inlineKeyboardBestSectors, driver)),
-		// 	tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardMaxSpeed+" "+symbolMaxSpeed, fmt.Sprintf("%s:%s:%s:%s", subcommandShowDrivers, serverID, inlineKeyboardMaxSpeed, driver)),
-		// ),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardUpdate+" "+symbolUpdate, fmt.Sprintf("%s:%s:%s:%s", subcommandShowDrivers, serverID, inlineKeyboardTimes, driver)),
 		),
 	)
 }

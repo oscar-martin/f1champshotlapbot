@@ -192,37 +192,24 @@ type SessionInfo struct {
 	RaceCompletion     RaceCompletion `json:"raceCompletion"`
 }
 
-func (s *Server) sendZeroData() {
-	{
-		body := map[string][]StandingHistoryDriverData{}
-		s.LiveStandingHistoryChan <- s.fromMessageToLiveStandingHistoryData(s.Name, s.ID, &body)
-	}
-	{
-		body := []StandingDriverData{}
-		s.LiveStandingChan <- s.fromMessageToLiveStandingData(s.Name, s.ID, body)
-	}
-	{
-		body := SessionInfo{}
-		s.LiveSessionInfoDataChan <- s.fromMessageToLiveSessionInfoData(s.Name, s.ID, &body)
-	}
+type ServerStarted struct {
+	ServerName  string `json:"serverName"`
+	ServerID    string `json:"serverId"`
+	SessionType string `json:"sessionType"`
 }
 
-func (s *Server) WebSocketReader(ctx context.Context) error {
+func (s *Server) WebSocketReader(ctx context.Context, newSessionChannel chan<- ServerStarted) error {
 	if s.WebSocketRunning {
 		return nil
 	}
 
-	s.RecevingData = false
-
 	defer func() {
-		// init channels
 		s.WebSocketRunning = false
-		s.RecevingData = false
-		s.sendZeroData()
+		s.reset()
 	}()
 
 	// init channels
-	s.sendZeroData()
+	s.reset()
 
 	urlString := strings.TrimPrefix(strings.TrimPrefix(s.URL, "https://"), "http://")
 	u := url.URL{Scheme: "ws", Host: urlString, Path: "/websocket/controlpanel"}
@@ -246,7 +233,7 @@ func (s *Server) WebSocketReader(ctx context.Context) error {
 	doneErr := make(chan error)
 
 	messageChan := make(chan Message)
-	go s.dispatchMessage(ctx, messageChan, doneErr)
+	go s.dispatchMessage(ctx, messageChan, doneErr, newSessionChannel)
 
 	go func() {
 		defer close(doneErr)
@@ -264,7 +251,7 @@ func (s *Server) WebSocketReader(ctx context.Context) error {
 	return <-doneErr
 }
 
-func (s *Server) dispatchMessage(ctx context.Context, messageChan <-chan Message, doneChan <-chan error) {
+func (s *Server) dispatchMessage(ctx context.Context, messageChan <-chan Message, doneChan <-chan error, newSessionChannel chan<- ServerStarted) {
 	timeoutTime := 5 * time.Second
 	timeout := time.After(timeoutTime)
 
@@ -274,54 +261,68 @@ func (s *Server) dispatchMessage(ctx context.Context, messageChan <-chan Message
 			return
 		case <-timeout:
 			// fmt.Printf("timeout waiting for message: %s\n", s.Name)
-			s.RecevingData = false
-			s.sendZeroData()
+			s.reset()
 			timeout = time.After(timeoutTime)
 		case m := <-messageChan:
 			timeout = time.After(timeoutTime)
+			if !s.RecevingData {
+				s.StartSessionPendingNotification = true
+			}
 			s.RecevingData = true
 			if m.MessageType == mtStandingHistory {
-				body := map[string][]StandingHistoryDriverData{}
+				shdd := map[string][]StandingHistoryDriverData{}
 				jsonData, err := json.Marshal(m.Body)
 				if err != nil {
 					log.Printf("Error marshalling standingsHistory: %s\n", err.Error())
 					continue
 				}
-				err = json.Unmarshal(jsonData, &body)
+				err = json.Unmarshal(jsonData, &shdd)
 				if err != nil {
 					log.Printf("Error unmarshalling standingsHistory: %s\n", err.Error())
 					continue
 				}
 				// fmt.Printf("!!!!!!updating live standing history timing!!!!!! %d\n", len(body))
-				s.LiveStandingHistoryChan <- s.fromMessageToLiveStandingHistoryData(s.Name, s.ID, &body)
+				s.LiveStandingHistoryChan <- s.fromMessageToLiveStandingHistoryData(s.Name, s.ID, &shdd)
 			} else if m.MessageType == mtStandings {
-				body := []StandingDriverData{}
+				sdd := []StandingDriverData{}
 				jsonData, err := json.Marshal(m.Body)
 				if err != nil {
 					log.Printf("Error marshalling standings: %s\n", err.Error())
 					continue
 				}
-				err = json.Unmarshal(jsonData, &body)
+				err = json.Unmarshal(jsonData, &sdd)
 				if err != nil {
 					log.Printf("Error unmarshalling standings: %s\n", err.Error())
 					continue
 				}
 				// fmt.Printf("!!!!!!updating live timing!!!!!! %d\n", len(body))
-				s.LiveStandingChan <- s.fromMessageToLiveStandingData(s.Name, s.ID, body)
+				s.LiveStandingChan <- s.fromMessageToLiveStandingData(s.Name, s.ID, sdd)
 			} else if m.MessageType == mtSessionInfo {
-				body := SessionInfo{}
+				si := SessionInfo{}
 				jsonData, err := json.Marshal(m.Body)
 				if err != nil {
 					log.Printf("Error marshalling sessionInfo: %s\n", err.Error())
 					continue
 				}
-				err = json.Unmarshal(jsonData, &body)
+				err = json.Unmarshal(jsonData, &si)
 				if err != nil {
 					log.Printf("Error unmarshalling sessionInfo: %s\n", err.Error())
 					continue
 				}
+				if s.StartSessionPendingNotification {
+					s.StartSessionPendingNotification = false
+					// only send the notification if the session has been running for less than 60 seconds
+					// otherwise, it's probably a session that was already running when the bot started
+					if si.CurrentEventTime < 60 /* seconds */ {
+						newSessionChannel <- ServerStarted{
+							ServerName:  s.Name,
+							ServerID:    s.ID,
+							SessionType: si.Session,
+						}
+					}
+				}
 				// fmt.Print("!!!!!!updating sessionInfo!!!!!!\n")
-				s.LiveSessionInfoDataChan <- s.fromMessageToLiveSessionInfoData(s.Name, s.ID, &body)
+				s.LiveSessionInfoDataChan <- s.fromMessageToLiveSessionInfoData(s.Name, s.ID, &si)
 			}
 		}
 	}

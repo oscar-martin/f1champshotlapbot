@@ -7,15 +7,15 @@ import (
 	"f1champshotlapsbot/pkg/menus"
 	"f1champshotlapsbot/pkg/pubsub"
 	"f1champshotlapsbot/pkg/servers"
+	"f1champshotlapsbot/pkg/settings"
 	"fmt"
 	"sync"
-	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 const (
-	liveAppName    = "Live"
+	liveAppName    = "LiveTiming"
 	buttonSettings = "Ajustes"
 )
 
@@ -30,13 +30,7 @@ type LiveApp struct {
 	mu                         sync.Mutex
 }
 
-func NewLiveApp(ctx context.Context, bot *tgbotapi.BotAPI, pubsubMgr *pubsub.PubSub, ss []servers.Server, appMenu menus.ApplicationMenu, exitChan chan bool, refreshTicker *time.Ticker) (*LiveApp, error) {
-	sm, err := servers.NewManager(ctx, bot, ss, pubsubMgr)
-	if err != nil {
-		return nil, err
-	}
-	sm.Sync(refreshTicker, exitChan)
-
+func NewLiveApp(ctx context.Context, bot *tgbotapi.BotAPI, pubsubMgr *pubsub.PubSub, ss []servers.Server, appMenu menus.ApplicationMenu, sm *settings.Manager) (*LiveApp, error) {
 	liveSessionInfoUpdateChans := []<-chan string{}
 	for _, server := range ss {
 		liveSessionInfoUpdateChans = append(liveSessionInfoUpdateChans, pubsubMgr.Subscribe(servers.PubSubSessionInfoPreffix+server.ID))
@@ -56,6 +50,9 @@ func NewLiveApp(ctx context.Context, bot *tgbotapi.BotAPI, pubsubMgr *pubsub.Pub
 		la.accepters = append(la.accepters, serverApp)
 	}
 
+	settingsApp := NewSettingsApp(la.bot, appMenu, sm)
+	la.accepters = append(la.accepters, settingsApp)
+
 	la.updateKeyboard()
 
 	for _, liveSessionInfoUpdateChan := range la.liveSessionInfoUpdateChans {
@@ -66,7 +63,6 @@ func NewLiveApp(ctx context.Context, bot *tgbotapi.BotAPI, pubsubMgr *pubsub.Pub
 }
 
 func (la *LiveApp) updateKeyboard() {
-
 	buttons := [][]tgbotapi.KeyboardButton{}
 	for idx := range la.servers {
 		if idx%2 == 0 {
@@ -148,7 +144,7 @@ func (la *LiveApp) AcceptButton(button string) (bool, func(ctx context.Context, 
 	// fmt.Printf("LIVE: button: %s. appName: %s\n", button, la.appMenu.Name)
 	if button == la.appMenu.Name {
 		return true, func(ctx context.Context, chatId int64) error {
-			message := fmt.Sprintf("%s application\n\n", la.appMenu.Name)
+			message := fmt.Sprintf("%s\n", la.appMenu.Name)
 			msg := tgbotapi.NewMessage(chatId, message)
 			msg.ReplyMarkup = la.menuKeyboard
 			_, err := la.bot.Send(msg)

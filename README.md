@@ -4,10 +4,14 @@ Telegram Bot for accessing the hotlaps from f1champs.es league.
 
 Once it is build, you can run it with:
 
+
 ```bash
 export TELEGRAM_TOKEN=<your token>
 export API_DOMAIN=<your domain>
+export RF2_SERVERS=<your rf2 servers>
 ./f1champshotlapsbot
 ```
 
 `API_DOMAIN` is the domain where the API is running, e.g. `https://my-server.com`
+`RF2_SERVERS` is following the next format `<server_id>,<server_url>;<server_id>,<server_url>;...`.
+For example: `PrimaryServer,http://my-server.com:8080;TrainingServer1,http://my-server.com:8081`

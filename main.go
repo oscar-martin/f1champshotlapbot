@@ -3,8 +3,11 @@ package main
 import (
 	"context"
 	"f1champshotlapsbot/pkg/apps"
+	"f1champshotlapsbot/pkg/apps/live"
 	"f1champshotlapsbot/pkg/apps/mainapp"
+	"f1champshotlapsbot/pkg/notification"
 	"f1champshotlapsbot/pkg/servers"
+	"f1champshotlapsbot/pkg/settings"
 	"fmt"
 	"log"
 	"os"
@@ -84,12 +87,27 @@ func main() {
 	refreshHotlapsTicker := time.NewTicker(60 * time.Minute)
 	refreshServersTicker := time.NewTicker(10 * time.Second)
 
+	settings, err := settings.NewManager()
+	if err != nil {
+		log.Fatalf("Error creating settings manager: %s", err.Error())
+	}
+
+	newSessionChannel := make(chan servers.ServerStarted)
+	nm := notification.NewManager(ctx, bot, settings, newSessionChannel)
+	go nm.Start(exitChan)
+
 	// build the main app
 	ss, err := createServers(rf2Servers)
 	if err != nil {
 		log.Fatalf("Error creating servers: %s", err.Error())
 	}
-	app, err = mainapp.NewMainApp(ctx, bot, domain, ss, pubsubMgr, exitChan, refreshHotlapsTicker, refreshServersTicker)
+	sm, err := servers.NewManager(ctx, bot, ss, pubsubMgr, newSessionChannel)
+	if err != nil {
+		log.Fatalf("Error creating servers manager: %s", err.Error())
+	}
+	go sm.Sync(refreshServersTicker, exitChan)
+
+	app, err = mainapp.NewMainApp(ctx, bot, domain, ss, pubsubMgr, exitChan, refreshHotlapsTicker, settings)
 	if err != nil {
 		log.Fatalf("Error creating main app: %s", err.Error())
 	}
@@ -106,6 +124,8 @@ func main() {
 	refreshHotlapsTicker.Stop()
 	refreshServersTicker.Stop()
 	exitChan <- true
+
+	settings.Close()
 
 	cancel()
 }
@@ -145,9 +165,24 @@ func handleUpdate(ctx context.Context, update tgbotapi.Update) {
 	switch {
 	// Handle messages
 	case update.Message != nil:
+		user := update.Message.From
+		if user == nil {
+			return
+		}
+		ctx = context.WithValue(ctx, live.UserContextKey, user)
+		ctx = context.WithValue(ctx, live.ChatContextKey, update.Message.Chat)
 		MessageHandler(ctx, update.Message)
 	// Handle button clicks
 	case update.CallbackQuery != nil:
+		user := update.CallbackQuery.From
+		if user == nil {
+			return
+		}
+		if update.CallbackQuery.Message == nil {
+			return
+		}
+		ctx = context.WithValue(ctx, live.UserContextKey, user)
+		ctx = context.WithValue(ctx, live.ChatContextKey, update.CallbackQuery.Message.Chat)
 		err := CallbackQueryHandler(ctx, update.CallbackQuery)
 		if err != nil {
 			log.Printf("An error occured: %s", err.Error())

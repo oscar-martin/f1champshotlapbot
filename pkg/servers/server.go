@@ -30,6 +30,8 @@ type Server struct {
 	RecevingData                    bool
 	StartSessionPendingNotification bool
 	BestSectorsForDriver            map[string]Sectors
+	BestLapForDriver                map[string]int
+	TopSpeedForDriver               map[string]map[int]float64
 	LiveSessionInfoDataChan         chan LiveSessionInfoData     `json:"-"`
 	LiveStandingHistoryChan         chan LiveStandingHistoryData `json:"-"`
 	LiveStandingChan                chan LiveStandingData        `json:"-"`
@@ -55,6 +57,8 @@ func (s *Server) reset() {
 	s.RecevingData = false
 	s.StartSessionPendingNotification = false
 	s.BestSectorsForDriver = make(map[string]Sectors)
+	s.BestLapForDriver = make(map[string]int)
+	s.TopSpeedForDriver = make(map[string]map[int]float64)
 	{
 		body := map[string][]StandingHistoryDriverData{}
 		s.LiveStandingHistoryChan <- s.fromMessageToLiveStandingHistoryData(s.Name, s.ID, &body)

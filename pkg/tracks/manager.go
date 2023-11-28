@@ -6,6 +6,7 @@ import (
 	"f1champshotlapsbot/pkg/helper"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -38,7 +39,7 @@ func (tm *Manager) Sync(ctx context.Context, ticker *time.Ticker, exitChan chan 
 			case <-exitChan:
 				return
 			case t := <-ticker.C:
-				fmt.Println("Resetting tracks and sessions at: ", t)
+				log.Println("Resetting tracks and sessions at: ", t)
 				tm.mu.Lock()
 				tm.tracks = []*Track{}
 				tm.mu.Unlock()

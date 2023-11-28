@@ -3,6 +3,7 @@ package servers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"math"
 	"net/url"
@@ -55,6 +56,7 @@ type StandingHistoryDriverData struct {
 	FinishStatus string  `json:"finishStatus"`
 	Pitting      bool    `json:"pitting"`
 	CarClass     string  `json:"carClass"`
+	TopSpeed     float64 `json:"topSpeed"` // synthetic field
 }
 
 type StandingDriverData struct {
@@ -70,6 +72,8 @@ type StandingDriverData struct {
 	BestSectorTime1    float64         `json:"bestSectorTime1"`
 	BestSectorTime2    float64         `json:"bestSectorTime2"`
 	BestSectorTime3    float64         `json:"bestSectorTime3"` // synthetic field
+	TopSpeedPerLap     map[int]float64 `json:"TopSpeedPerLap"`  // synthetic field
+	BestLap            int             `json:"BestLap"`         // synthetic field
 	BestLapTime        float64         `json:"bestLapTime"`
 	LastSectorTime1    float64         `json:"lastSectorTime1"`
 	LastSectorTime2    float64         `json:"lastSectorTime2"`
@@ -196,6 +200,11 @@ type ServerStarted struct {
 	ServerName  string `json:"serverName"`
 	ServerID    string `json:"serverId"`
 	SessionType string `json:"sessionType"`
+	TrackName   string `json:"trackName"`
+}
+
+func (ss ServerStarted) String() string {
+	return fmt.Sprintf("  ▸ Servidor: %s\n  ▸ Sesión: %s\n  ▸ Circuito: %s", ss.ServerName, ss.SessionType, ss.TrackName)
 }
 
 func (s *Server) WebSocketReader(ctx context.Context, newSessionChannel chan<- ServerStarted) error {
@@ -311,13 +320,16 @@ func (s *Server) dispatchMessage(ctx context.Context, messageChan <-chan Message
 				}
 				if s.StartSessionPendingNotification {
 					s.StartSessionPendingNotification = false
+					log.Printf("Server %s started receiving data for session: %s\n", s.Name, si.Session)
 					// only send the notification if the session has been running for less than 60 seconds
 					// otherwise, it's probably a session that was already running when the bot started
 					if si.CurrentEventTime < 60 /* seconds */ {
+						log.Printf("Signaling serverStarted subscribers for Server %s started: %s\n", s.Name, si.Session)
 						newSessionChannel <- ServerStarted{
 							ServerName:  s.Name,
 							ServerID:    s.ID,
 							SessionType: si.Session,
+							TrackName:   si.TrackName,
 						}
 					}
 				}
@@ -337,10 +349,17 @@ func (s *Server) fromMessageToLiveStandingHistoryData(serverName, serverID strin
 			driverNames = append(driverNames, driversData[0].DriverName)
 			driversDataMap[driversData[0].DriverName] = driversData
 
+			topSpeedForDriver, topSpeedForDriverFound := s.TopSpeedForDriver[driversData[0].DriverName]
+
 			bestS1 := 0.0
 			bestS2 := 0.0
 			bestS3 := 0.0
 			for i := range driversData {
+				if topSpeedForDriverFound {
+					driversData[i].TopSpeed = topSpeedForDriver[i]
+				} else {
+					driversData[i].TopSpeed = -1.0
+				}
 				s1 := driversData[i].SectorTime1
 				s2 := -1.0
 				if s1 > 0.0 && driversData[i].SectorTime2 > 0.0 {
@@ -403,12 +422,49 @@ func (s *Server) fromMessageToLiveStandingData(serverName, serverID string, data
 	})
 
 	for i := range data {
+		// if i == 0 {
+		// fmt.Printf("Top Speed in lap %d:\n  - %.1fkph\n", data[i].LapsCompleted, data[i].CarVelocity.Velocity*3.6)
+		// }
+
+		// update topSpeed
+		{
+			topSpeedPerLaps, found := s.TopSpeedForDriver[data[i].DriverName]
+			if !found {
+				s.TopSpeedForDriver[data[i].DriverName] = map[int]float64{}
+				topSpeedPerLaps = s.TopSpeedForDriver[data[i].DriverName]
+			}
+			topSpeed, found := topSpeedPerLaps[data[i].LapsCompleted]
+			speed := data[i].CarVelocity.Velocity * 3.6
+			if !found {
+				topSpeedPerLaps[data[i].LapsCompleted] = speed
+			} else if topSpeed < speed {
+				topSpeedPerLaps[data[i].LapsCompleted] = speed
+			}
+			data[i].TopSpeedPerLap = topSpeedPerLaps
+		}
+
+		// update best sectors
 		{
 			bestSectors, found := s.BestSectorsForDriver[data[i].DriverName]
 			if found {
 				data[i].BestSectorTime1 = bestSectors.Sector1
 				data[i].BestSectorTime2 = bestSectors.Sector2
 				data[i].BestSectorTime3 = bestSectors.Sector3
+			}
+		}
+
+		// update best lap
+		{
+			if data[i].BestLapTime == data[i].LastLapTime && data[i].BestLapTime > 0.0 {
+				lap := data[i].LapsCompleted - 1
+				data[i].BestLap = lap
+				s.BestLapForDriver[data[i].DriverName] = lap
+			} else {
+				bestLap, found := s.BestLapForDriver[data[i].DriverName]
+				if !found {
+					bestLap = -1
+				}
+				data[i].BestLap = bestLap
 			}
 		}
 	}

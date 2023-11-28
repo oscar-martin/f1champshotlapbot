@@ -78,11 +78,6 @@ func main() {
 	// Pass cancellable context to goroutine
 	go receiveUpdates(ctx, updates)
 
-	// TODO: remove this
-	// ---------------------
-	// CreateServers([]int{10001, 10002, 10004})
-	// ---------------------
-
 	exitChan := make(chan bool)
 	refreshHotlapsTicker := time.NewTicker(60 * time.Minute)
 	refreshServersTicker := time.NewTicker(10 * time.Second)

@@ -9,6 +9,7 @@ import (
 	"f1champshotlapsbot/pkg/pubsub"
 	"f1champshotlapsbot/pkg/servers"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 
@@ -91,7 +92,7 @@ func (sa *ServerApp) updater() {
 		// fmt.Println("Updating SessionInfo")
 		s, err := sa.caster.From(payload)
 		if err != nil {
-			fmt.Printf("Error casting SessionInfo: %s\n", err.Error())
+			log.Printf("Error casting SessionInfo: %s\n", err.Error())
 			continue
 		}
 		sa.mu.Lock()
@@ -163,7 +164,7 @@ func (sa *ServerApp) AcceptButton(button string) (bool, func(ctx context.Context
 					sa.liveSessionInfoData.ServerName,
 					si.TrackName,
 					si.LapDistance,
-					helper.SecondsToHoursAndMinutes(float64(si.EndEventTime-si.CurrentEventTime)),
+					helper.SecondsToHoursAndMinutes(si.EndEventTime-si.CurrentEventTime),
 					si.Session,
 					laps,
 					si.NumberOfVehicles,

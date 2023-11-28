@@ -28,9 +28,14 @@ type GridApp struct {
 	serverID                   string
 	liveStandingData           servers.LiveStandingData
 	liveStandingDataUpdateChan <-chan string
-	caster                     caster.ChannelCaster[servers.LiveStandingData]
-	mu                         sync.Mutex
-	menuKeyboard               tgbotapi.ReplyKeyboardMarkup
+	liveStandingDataCaster     caster.ChannelCaster[servers.LiveStandingData]
+
+	liveSessionInfoData           servers.LiveSessionInfoData
+	liveSessionInfoDataUpdateChan <-chan string
+	liveSessionInfoDataCaster     caster.ChannelCaster[servers.LiveSessionInfoData]
+
+	mu           sync.Mutex
+	menuKeyboard tgbotapi.ReplyKeyboardMarkup
 }
 
 func NewGridApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, pubsubMgr *pubsub.PubSub, serverID string) *GridApp {
@@ -41,35 +46,51 @@ func NewGridApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, pubsubMgr *
 	)
 
 	ga := &GridApp{
-		bot:                        bot,
-		appMenu:                    appMenu,
-		serverID:                   serverID,
-		caster:                     caster.JSONChannelCaster[servers.LiveStandingData]{},
-		liveStandingDataUpdateChan: pubsubMgr.Subscribe(servers.PubSubDriversSessionPreffix + serverID),
-		menuKeyboard:               menuKeyboard,
+		bot:                           bot,
+		appMenu:                       appMenu,
+		serverID:                      serverID,
+		liveStandingDataCaster:        caster.JSONChannelCaster[servers.LiveStandingData]{},
+		liveStandingDataUpdateChan:    pubsubMgr.Subscribe(servers.PubSubDriversSessionPreffix + serverID),
+		liveSessionInfoDataCaster:     caster.JSONChannelCaster[servers.LiveSessionInfoData]{},
+		liveSessionInfoDataUpdateChan: pubsubMgr.Subscribe(servers.PubSubSessionInfoPreffix + serverID),
+		menuKeyboard:                  menuKeyboard,
 	}
 
-	go ga.updater()
+	go ga.liveStandingDataUpdater()
+	go ga.liveSessionInfoDataUpdater()
 
 	return ga
 }
 
-func (ga *GridApp) updater() {
+func (ga *GridApp) liveStandingDataUpdater() {
 	for payload := range ga.liveStandingDataUpdateChan {
 		// fmt.Println("Updating DriverSessions")
-		dss, err := ga.caster.From(payload)
+		dss, err := ga.liveStandingDataCaster.From(payload)
 		if err != nil {
-			fmt.Printf("Error casting DriverSessions: %s\n", err.Error())
+			log.Printf("Error casting DriverSessions: %s\n", err.Error())
 			continue
 		}
-		ga.update(dss)
+		ga.update(dss, ga.liveSessionInfoData)
 	}
 }
 
-func (ga *GridApp) update(lsd servers.LiveStandingData) {
+func (ga *GridApp) liveSessionInfoDataUpdater() {
+	for payload := range ga.liveSessionInfoDataUpdateChan {
+		// fmt.Println("Updating SessionInfo")
+		lsi, err := ga.liveSessionInfoDataCaster.From(payload)
+		if err != nil {
+			log.Printf("Error casting SessionInfo: %s\n", err.Error())
+			continue
+		}
+		ga.update(ga.liveStandingData, lsi)
+	}
+}
+
+func (ga *GridApp) update(lsd servers.LiveStandingData, lsi servers.LiveSessionInfoData) {
 	ga.mu.Lock()
 	defer ga.mu.Unlock()
 	ga.liveStandingData = lsd
+	ga.liveSessionInfoData = lsi
 }
 
 func (ga *GridApp) AcceptCommand(command string) (bool, func(ctx context.Context, chatId int64) error) {
@@ -141,17 +162,22 @@ func (ga *GridApp) sendSessionData(chatId int64, messageId *int, driversSession 
 			t.AppendHeader(table.Row{tableDriver, "Última", "Mejor"})
 		case inlineKeyboardOptimumLap:
 			t.AppendHeader(table.Row{tableDriver, "Óptimo", "Mejor"})
+		case inlineKeyboardBestLap:
+			t.AppendHeader(table.Row{tableDriver, "Mejor", "Top Speed"})
 		default:
 			t.AppendHeader(table.Row{tableDriver, infoType})
 		}
 		for idx, driverStat := range driversSession.Drivers {
 			switch infoType {
 			case inlineKeyboardStatus:
+				// state := "🟢"
 				state := ""
 				if driverStat.InGarageStall {
 					state = "P"
+					// state = "🔴"
 				} else if driverStat.Pitting {
 					state = "P"
+					// state = "🟡"
 				}
 				var s1 float64
 				s2 := -1.0
@@ -197,9 +223,18 @@ func (ga *GridApp) sendSessionData(chatId int64, messageId *int, driversSession 
 					diff,
 				})
 			case inlineKeyboardBestLap:
+				topSpeed := "-"
+				if driverStat.BestLap > 0 {
+					kph, found := driverStat.TopSpeedPerLap[driverStat.BestLap]
+					if found {
+						topSpeed = fmt.Sprintf("%.1f km/h", kph)
+					}
+				}
+				// fmt.Printf("Driver: %s\n   BestLap: %d\n   Data: %+v\n   Top Speed: %s\n", driverStat.DriverName, driverStat.BestLap, driverStat.TopSpeedPerLap, topSpeed)
 				t.AppendRow([]interface{}{
 					helper.GetDriverCodeName(driverStat.DriverName),
 					helper.SecondsToMinutes(driverStat.BestLapTime),
+					topSpeed,
 				})
 			case inlineKeyboardLastLap:
 				t.AppendRow([]interface{}{
@@ -274,13 +309,15 @@ func (ga *GridApp) sendSessionData(chatId int64, messageId *int, driversSession 
 
 		keyboard := getInlineKeyboard(driversSession.ServerID)
 		var cfg tgbotapi.Chattable
+		remainingTime := helper.SecondsToHoursAndMinutes(ga.liveSessionInfoData.SessionInfo.EndEventTime - ga.liveSessionInfoData.SessionInfo.CurrentEventTime)
+		text := fmt.Sprintf("```\nTiempo restante: %s\nServer: %q\n\n%s```", remainingTime, driversSession.ServerName, b.String())
 		if messageId == nil {
-			msg := tgbotapi.NewMessage(chatId, fmt.Sprintf("```\nDatos de la sesión actual en %q\n\n%s```", driversSession.ServerName, b.String()))
+			msg := tgbotapi.NewMessage(chatId, text)
 			msg.ParseMode = tgbotapi.ModeMarkdownV2
 			msg.ReplyMarkup = keyboard
 			cfg = msg
 		} else {
-			msg := tgbotapi.NewEditMessageText(chatId, *messageId, fmt.Sprintf("```\nDatos de la sesión actual en %q\n\n%s```", driversSession.ServerName, b.String()))
+			msg := tgbotapi.NewEditMessageText(chatId, *messageId, text)
 			msg.ParseMode = tgbotapi.ModeMarkdownV2
 			msg.ReplyMarkup = &keyboard
 			cfg = msg

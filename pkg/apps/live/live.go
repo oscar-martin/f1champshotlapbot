@@ -9,6 +9,7 @@ import (
 	"f1champshotlapsbot/pkg/servers"
 	"f1champshotlapsbot/pkg/settings"
 	"fmt"
+	"log"
 	"sync"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -99,7 +100,7 @@ func (la *LiveApp) updater(c <-chan string) {
 	for payload := range c {
 		lsid, err := la.liveSessionInfoDataCaster.From(payload)
 		if err != nil {
-			fmt.Printf("Error casting session info: %s\n", err.Error())
+			log.Printf("Error casting session info: %s\n", err.Error())
 			continue
 		}
 		la.mu.Lock()

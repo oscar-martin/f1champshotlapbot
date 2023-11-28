@@ -64,6 +64,8 @@ func (sm *Manager) initializeServers() error {
 	for i := range sm.servers {
 		sm.servers[i].Name = sm.servers[i].ID
 		sm.servers[i].BestSectorsForDriver = make(map[string]Sectors)
+		sm.servers[i].BestLapForDriver = make(map[string]int)
+		sm.servers[i].TopSpeedForDriver = make(map[string]map[int]float64)
 		sm.servers[i].LiveSessionInfoDataChan = make(chan LiveSessionInfoData)
 		sm.servers[i].LiveStandingChan = make(chan LiveStandingData)
 		sm.servers[i].LiveStandingHistoryChan = make(chan LiveStandingHistoryData)
@@ -89,7 +91,9 @@ func (sm *Manager) initializeServers() error {
 			}
 		}(i)
 		go func(idx int) {
+			// fmt.Printf("Starting live standing history goroutine for server %s\n", sm.servers[idx].ID)
 			for liveStanding := range sm.servers[idx].LiveStandingHistoryChan {
+				// fmt.Printf("Received live standing history for server %s\n", sm.servers[idx].ID)
 				payload, err := sm.liveStandingHistoryDataCaster.To(liveStanding)
 				if err != nil {
 					log.Printf("Error casting live standing history to json: %s", err.Error())
@@ -112,6 +116,7 @@ func (sm *Manager) checkServersOnline() {
 			if !sm.servers[idx].WebSocketRunning {
 				// set up the ws client
 				go func() {
+					// fmt.Printf("Starting websocket reader for server %s\n", sm.servers[idx].ID)
 					err := sm.servers[idx].WebSocketReader(sm.ctx, sm.newSessionChannel)
 					if err != nil {
 						log.Printf("Error reading websocket: %s", err.Error())

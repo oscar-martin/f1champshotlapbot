@@ -4,7 +4,6 @@ import (
 	"context"
 	"f1champshotlapsbot/pkg/servers"
 	"f1champshotlapsbot/pkg/settings"
-	"fmt"
 	"log"
 	"strconv"
 	"strings"
@@ -49,7 +48,7 @@ func (m *Manager) Start(exitChan <-chan bool) {
 		case newSession := <-m.newSessionStarted:
 			sessionType := strings.ToLower(newSession.SessionType)
 			if isSessionToBeNotified(sessionType) {
-				log.Printf("Session to be notified started: %s -> %s", newSession.ServerName, newSession.SessionType)
+				log.Printf("Session to be notified started: %s -> %s\n", newSession.ServerName, newSession.SessionType)
 				switch {
 				case isTestDay(sessionType):
 					m.handleNotification(newSession, settings.TestDay)
@@ -68,8 +67,8 @@ func (m *Manager) Start(exitChan <-chan bool) {
 }
 
 func (m *Manager) handleNotification(newSession servers.ServerStarted, sessionType string) {
-	log.Printf("Session to be notified started: %s -> %s", newSession.ServerName, sessionType)
 	receipients, err := m.lister.ListUsersForSessionStarted(sessionType)
+	log.Printf("Sending notification for %s -> %s to %d telegram users\n", newSession.ServerName, sessionType, len(receipients))
 	if err != nil {
 		log.Printf("Error listing users for session started: %s", err.Error())
 		return
@@ -87,13 +86,14 @@ func (m *Manager) sendNotification(tusers []settings.TelegramUser, newSession se
 
 	tg := Telegram{}
 	tg.SetClient(m.bot)
+
 	for _, tuser := range tusers {
 		chatId, _ := strconv.ParseInt(tuser.ChatID, 0, 64)
 		tg.AddReceivers(chatId)
 	}
-	notify.UseServices(tg)
 
-	err := notify.Send(m.ctx, "Nueva sesión iniciada", fmt.Sprintf("Servidor: %s\nSesión: %s", newSession.ServerName, newSession.SessionType))
+	n := notify.NewWithServices(tg)
+	err := n.Send(m.ctx, "Nueva sesión iniciada:", newSession.String())
 	if err != nil {
 		return err
 	}

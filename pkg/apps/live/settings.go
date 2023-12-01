@@ -21,7 +21,7 @@ const (
 	inlineKeyboardTestday                = settings.TestDay
 	inlineKeyboardPractice               = settings.Practice
 	inlineKeyboardQual                   = settings.Qual
-	inlineKeyboardWarmup                 = settings.Warnup
+	inlineKeyboardWarmup                 = settings.Warmup
 	inlineKeyboardRace                   = settings.Race
 
 	symbolNotifications     = "🔔"
@@ -147,7 +147,7 @@ func getSettingsInlineKeyboard(userID string, n settings.Notifications) tgbotapi
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardQual+" "+n.QualSymbol(), fmt.Sprintf("%s:%s:%s", subcommandNotifications, userID, inlineKeyboardQual)),
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardWarmup+" "+n.WarnupSymbol(), fmt.Sprintf("%s:%s:%s", subcommandNotifications, userID, inlineKeyboardWarmup)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardWarmup+" "+n.WarmupSymbol(), fmt.Sprintf("%s:%s:%s", subcommandNotifications, userID, inlineKeyboardWarmup)),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardRace+" "+n.RaceSymbol(), fmt.Sprintf("%s:%s:%s", subcommandNotifications, userID, inlineKeyboardRace)),

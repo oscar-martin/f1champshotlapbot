@@ -16,7 +16,7 @@ const (
 	TestDay  = "TestDay"
 	Practice = "Practice"
 	Qual     = "Qual"
-	Warnup   = "Warmup"
+	Warmup   = "Warmup"
 	Race     = "Race"
 )
 
@@ -33,7 +33,7 @@ func AllEnabled() Notifications {
 		TestDay:  true,
 		Practice: true,
 		Qual:     true,
-		Warnup:   true,
+		Warmup:   true,
 		Race:     true,
 	}
 }
@@ -43,7 +43,7 @@ func AllDisabled() Notifications {
 		TestDay:  false,
 		Practice: false,
 		Qual:     false,
-		Warnup:   false,
+		Warmup:   false,
 		Race:     false,
 	}
 }
@@ -60,8 +60,8 @@ func (n Notifications) QualSymbol() string {
 	return symbolStatus(n[Qual])
 }
 
-func (n Notifications) WarnupSymbol() string {
-	return symbolStatus(n[Warnup])
+func (n Notifications) WarmupSymbol() string {
+	return symbolStatus(n[Warmup])
 }
 
 func (n Notifications) RaceSymbol() string {
@@ -89,8 +89,8 @@ func (n Notifications) QualEnabledInt() int {
 	return 0
 }
 
-func (n Notifications) WarnupEnabledInt() int {
-	if n[Warnup] {
+func (n Notifications) WarmupEnabledInt() int {
+	if n[Warmup] {
 		return 1
 	}
 	return 0
@@ -108,7 +108,7 @@ func (n Notifications) String() string {
 	status = append(status, fmt.Sprintf("%s Notificación inicio de %q", symbolStatus(n[TestDay]), TestDay))
 	status = append(status, fmt.Sprintf("%s Notificación inicio de %q", symbolStatus(n[Practice]), Practice))
 	status = append(status, fmt.Sprintf("%s Notificación inicio de %q", symbolStatus(n[Qual]), Qual))
-	status = append(status, fmt.Sprintf("%s Notificación inicio de %q", symbolStatus(n[Warnup]), Warnup))
+	status = append(status, fmt.Sprintf("%s Notificación inicio de %q", symbolStatus(n[Warmup]), Warmup))
 	status = append(status, fmt.Sprintf("%s Notificación inicio de %q", symbolStatus(n[Race]), Race))
 	return strings.Join(status, "\n")
 }

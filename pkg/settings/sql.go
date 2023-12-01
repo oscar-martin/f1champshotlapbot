@@ -40,7 +40,7 @@ func processSelectUserRows(rows *sql.Rows) (Notifications, error) {
 		n.setSessionTypeEnabledFlag(TestDay, testday == 1)
 		n.setSessionTypeEnabledFlag(Practice, practice == 1)
 		n.setSessionTypeEnabledFlag(Qual, qual == 1)
-		n.setSessionTypeEnabledFlag(Warnup, warnup == 1)
+		n.setSessionTypeEnabledFlag(Warmup, warnup == 1)
 		n.setSessionTypeEnabledFlag(Race, race == 1)
 		return n, nil
 	}
@@ -85,7 +85,7 @@ func buildUpdateUserCommand(userID, chatID string, n Notifications) string {
 	testday := n.TestDayEnabledInt()
 	practice := n.PracticeEnabledInt()
 	qual := n.QualEnabledInt()
-	warnup := n.WarnupEnabledInt()
+	warnup := n.WarmupEnabledInt()
 	race := n.RaceEnabledInt()
 
 	fields := "userid, name, chatid, testday, practice, qual, warnup, race"

@@ -197,10 +197,11 @@ type SessionInfo struct {
 }
 
 type ServerStarted struct {
-	ServerName  string `json:"serverName"`
-	ServerID    string `json:"serverId"`
-	SessionType string `json:"sessionType"`
-	TrackName   string `json:"trackName"`
+	ServerName  string  `json:"serverName"`
+	ServerID    string  `json:"serverId"`
+	SessionType string  `json:"sessionType"`
+	TrackName   string  `json:"trackName"`
+	EventTime   float64 `json:"eventTime"`
 }
 
 func (ss ServerStarted) String() string {
@@ -304,6 +305,16 @@ func (s *Server) dispatchMessage(ctx context.Context, messageChan <-chan Message
 					log.Printf("Error unmarshalling standings: %s\n", err.Error())
 					continue
 				}
+				if s.StartSessionPendingNotification &&
+					s.SessionStarted != (ServerStarted{}) &&
+					len(sdd) > 0 /* player */ {
+					s.StartSessionPendingNotification = false
+					// only send the notification once at least one player comes in
+					// otherwise, it's probably a session that was already running when the bot started
+					log.Printf("Signaling serverStarted subscribers for Server %s started: %s\n", s.Name, s.SessionStarted.SessionType)
+					newSessionChannel <- s.SessionStarted
+				}
+
 				// fmt.Printf("!!!!!!updating live timing!!!!!! %d\n", len(body))
 				s.LiveStandingChan <- s.fromMessageToLiveStandingData(s.Name, s.ID, sdd)
 			} else if m.MessageType == mtSessionInfo {
@@ -318,19 +329,14 @@ func (s *Server) dispatchMessage(ctx context.Context, messageChan <-chan Message
 					log.Printf("Error unmarshalling sessionInfo: %s\n", err.Error())
 					continue
 				}
-				if s.StartSessionPendingNotification {
-					s.StartSessionPendingNotification = false
+				if s.SessionStarted == (ServerStarted{}) {
 					log.Printf("Server %s started receiving data for session: %s\n", s.Name, si.Session)
-					// only send the notification if the session has been running for less than 60 seconds
-					// otherwise, it's probably a session that was already running when the bot started
-					if si.CurrentEventTime < 60 /* seconds */ {
-						log.Printf("Signaling serverStarted subscribers for Server %s started: %s\n", s.Name, si.Session)
-						newSessionChannel <- ServerStarted{
-							ServerName:  s.Name,
-							ServerID:    s.ID,
-							SessionType: si.Session,
-							TrackName:   si.TrackName,
-						}
+					s.SessionStarted = ServerStarted{
+						ServerName:  s.Name,
+						ServerID:    s.ID,
+						SessionType: si.Session,
+						TrackName:   si.TrackName,
+						EventTime:   si.CurrentEventTime,
 					}
 				}
 				// fmt.Print("!!!!!!updating sessionInfo!!!!!!\n")
@@ -340,21 +346,59 @@ func (s *Server) dispatchMessage(ctx context.Context, messageChan <-chan Message
 	}
 }
 
-func (s *Server) fromMessageToLiveStandingHistoryData(serverName, serverID string, m *map[string][]StandingHistoryDriverData) LiveStandingHistoryData {
+func (s *Server) fromMessageToLiveStandingHistoryData(serverName, serverID string, idToDriverDataSlice *map[string][]StandingHistoryDriverData) LiveStandingHistoryData {
 	driversDataMap := map[string][]StandingHistoryDriverData{}
 	// get driver names from map
 	driverNames := []string{}
-	for _, driversData := range *m {
-		if len(driversData) > 0 {
-			driverNames = append(driverNames, driversData[0].DriverName)
-			driversDataMap[driversData[0].DriverName] = driversData
 
-			topSpeedForDriver, topSpeedForDriverFound := s.TopSpeedForDriver[driversData[0].DriverName]
+	// as drivers can come in and out of the server, we need to keep track of the total laps
+	// by aggregating the laps of the drivers that have the same name
+	// sort idToDriverDataSlice by key as their data is ordered by key id.
+	sortedKeys := []string{}
+	for k := range *idToDriverDataSlice {
+		sortedKeys = append(sortedKeys, k)
+	}
+	sort.Strings(sortedKeys)
+
+	playersPosition := map[string]int{}
+
+	// iterate over map
+	for _, k := range sortedKeys {
+		driversData := (*idToDriverDataSlice)[k]
+		if len(driversData) > 0 {
+			driverName := driversData[0].DriverName
+			existingDriversData, found := driversDataMap[driverName]
+			if !found {
+				driverNames = append(driverNames, driverName)
+				driversDataMap[driverName] = driversData
+			} else {
+				numLaps := 0.0
+				if len(existingDriversData) > 0.0 {
+					numLaps = existingDriversData[len(existingDriversData)-1].TotalLaps
+				}
+				for i := range driversData {
+					driversData[i].TotalLaps += numLaps
+				}
+
+				driversData = append(existingDriversData, driversData...)
+				driversDataMap[driverName] = driversData
+			}
+
+			topSpeedForDriver, topSpeedForDriverFound := s.TopSpeedForDriver[driverName]
 
 			bestS1 := 0.0
 			bestS2 := 0.0
 			bestS3 := 0.0
 			for i := range driversData {
+				playerPosition, ok := playersPosition[driverName]
+				if !ok {
+					playerPosition = int(math.Inf(1))
+				}
+				if driversData[i].Position < playerPosition {
+					playerPosition = driversData[i].Position
+				}
+				playersPosition[driverName] = playerPosition
+
 				if topSpeedForDriverFound {
 					driversData[i].TopSpeed = topSpeedForDriver[i]
 				} else {
@@ -386,7 +430,7 @@ func (s *Server) fromMessageToLiveStandingHistoryData(serverName, serverID strin
 				}
 			}
 
-			s.BestSectorsForDriver[driversData[0].DriverName] = Sectors{
+			s.BestSectorsForDriver[driverName] = Sectors{
 				Sector1: bestS1,
 				Sector2: bestS2,
 				Sector3: bestS3,
@@ -394,16 +438,17 @@ func (s *Server) fromMessageToLiveStandingHistoryData(serverName, serverID strin
 		}
 	}
 
+	// sort driver names by position
 	sort.SliceStable(driverNames, func(i, j int) bool {
-		s1 := driversDataMap[driverNames[i]]
-		s2 := driversDataMap[driverNames[j]]
-		pos1 := int(math.Inf(1))
-		pos2 := int(math.Inf(1))
-		if len(s1) > 0 {
-			pos1 = s1[len(s1)-1].Position
-		}
-		if len(s2) > 0 {
-			pos2 = s2[len(s2)-1].Position
+		pos1 := playersPosition[driverNames[i]]
+		pos2 := playersPosition[driverNames[j]]
+		bestLap1 := s.BestSectorsForDriver[driverNames[i]].TimeLap()
+		bestLap2 := s.BestSectorsForDriver[driverNames[j]].TimeLap()
+		if pos1 == pos2 {
+			if bestLap1 > 0.0 && bestLap2 > 0.0 {
+				return bestLap1 < bestLap2
+			}
+			return bestLap1 > 0.0
 		}
 		return pos1 < pos2
 	})
@@ -422,10 +467,6 @@ func (s *Server) fromMessageToLiveStandingData(serverName, serverID string, data
 	})
 
 	for i := range data {
-		// if i == 0 {
-		// fmt.Printf("Top Speed in lap %d:\n  - %.1fkph\n", data[i].LapsCompleted, data[i].CarVelocity.Velocity*3.6)
-		// }
-
 		// update topSpeed
 		{
 			topSpeedPerLaps, found := s.TopSpeedForDriver[data[i].DriverName]

@@ -57,7 +57,7 @@ func (m *Manager) Start(exitChan <-chan bool) {
 				case isQual(sessionType):
 					m.handleNotification(newSession, settings.Qual)
 				case isWarmup(sessionType):
-					m.handleNotification(newSession, settings.Warnup)
+					m.handleNotification(newSession, settings.Warmup)
 				case isRace(sessionType):
 					m.handleNotification(newSession, settings.Race)
 				}

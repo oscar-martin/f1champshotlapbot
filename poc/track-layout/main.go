@@ -115,13 +115,10 @@ func drawImage(aiw AIW, minX, maxX, minY, maxY, minZ, maxZ float64, maxType int)
 
 	// Set some properties
 	// gc.SetFillColor(color.RGBA{0x44, 0xff, 0x44, 0xff})
-	gc.SetStrokeColor(color.RGBA{0xff, 0xff, 0xff, 0xff})
-	gc.SetLineWidth(10)
+	// gc.SetStrokeColor(color.RGBA{0xff, 0xff, 0xff, 0xff})
 
 	// Draw a closed shape
-	gc.BeginPath() // Initialize a new path
-
-	for i := 0; i < 2; i++ {
+	for i := 1; i >= 0; i-- {
 		aiwFiltered := AIW{}
 		for _, data := range aiw {
 			if data.Type == i {
@@ -129,25 +126,32 @@ func drawImage(aiw AIW, minX, maxX, minY, maxY, minZ, maxZ float64, maxType int)
 			}
 		}
 
-		drawType(gc, aiwFiltered, minX, maxX, minY, maxY, minZ, maxZ, i)
-	}
-	// gc.Close()
-
-	invertY(gc, dest.Rect, 0.05)
-
-	if rotate {
-		gc.Rotate(math.Pi / 2)
-		f := width / height
-		gc.Translate(0, -f*float64(dest.Rect.Max.Y))
+		drawType(gc, aiwFiltered, minX, maxX, minY, maxY, minZ, maxZ, i, rotate, width, height, dest.Rect)
 	}
 
-	gc.Stroke()
+	// invertY(gc, dest.Rect, 0.05)
 
+	// if rotate {
+	// 	gc.Rotate(math.Pi / 2)
+	// 	f := width / height
+	// 	gc.Translate(0, -f*float64(dest.Rect.Max.Y))
+	// }
+
+	// gc.Stroke()
 	// Save to file
 	draw2dimg.SaveToPngFile("hello.png", dest)
 }
 
-func drawType(gc draw2d.GraphicContext, aiw AIW, minX, maxX, minY, maxY, minZ, maxZ float64, t int) {
+func drawType(gc draw2d.GraphicContext, aiw AIW, minX, maxX, minY, maxY, minZ, maxZ float64, t int, rotate bool, width, height float64, rect image.Rectangle) {
+	// gc.BeginPath() // Initialize a new path
+	gc.Save()
+	if t == 0 {
+		gc.SetStrokeColor(image.White)
+		gc.SetLineWidth(15)
+	} else {
+		gc.SetStrokeColor(color.RGBA{0xaa, 0xaa, 0xaa, 0xff})
+		gc.SetLineWidth(10)
+	}
 	initX, initZ := 0.0, 0.0
 	// size := len(aiw)
 	for _, data := range aiw {
@@ -166,4 +170,14 @@ func drawType(gc draw2d.GraphicContext, aiw AIW, minX, maxX, minY, maxY, minZ, m
 	if t == 0 {
 		gc.LineTo(initX, initZ)
 	}
+	invertY(gc, rect, 0.05)
+
+	if rotate {
+		gc.Rotate(math.Pi / 2)
+		f := width / height
+		gc.Translate(0, -f*float64(rect.Max.Y))
+	}
+
+	gc.Stroke()
+	gc.Restore()
 }

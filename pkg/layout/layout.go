@@ -87,42 +87,32 @@ func drawImage(filepath string, aiw AIW, minX, maxX, minY, maxY, minZ, maxZ floa
 	dest := image.NewRGBA(image.Rect(0, 0, int(width), int(height)))
 	gc := draw2dimg.NewGraphicContext(dest)
 
-	// Set some properties
-	// gc.SetFillColor(color.RGBA{0x44, 0xff, 0x44, 0xff})
-	gc.SetStrokeColor(color.RGBA{0x00, 0x00, 0x00, 0xff})
-	gc.SetLineWidth(10)
-
-	// Draw a closed shape
-	gc.BeginPath() // Initialize a new path
-	for i := 0; i < 2; i++ {
+	// Draw shapes
+	for i := 1; i >= 0; i-- {
 		aiwFiltered := AIW{}
 		for _, data := range aiw {
 			if data.Type == i {
 				aiwFiltered = append(aiwFiltered, data)
 			}
 		}
-		drawType(gc, aiwFiltered, minX, maxX, minY, maxY, minZ, maxZ, i)
+		drawType(gc, aiwFiltered, minX, maxX, minY, maxY, minZ, maxZ, i, rotate, width, height, dest.Rect)
 	}
-
-	// gc.Close()
-
-	invertY(gc, dest.Rect, 0.1)
-
-	if rotate {
-		gc.Rotate(math.Pi / 2)
-		f := width / height
-		gc.Translate(0, -f*float64(dest.Rect.Max.Y))
-	}
-
-	gc.Stroke()
 
 	// Save to file
 	return draw2dimg.SaveToPngFile(filepath, dest)
 }
 
-func drawType(gc draw2d.GraphicContext, aiw AIW, minX, maxX, minY, maxY, minZ, maxZ float64, t int) {
+func drawType(gc draw2d.GraphicContext, aiw AIW, minX, maxX, minY, maxY, minZ, maxZ float64, t int, rotate bool, width, height float64, rect image.Rectangle) {
+	gc.Save()
+	if t == 0 {
+		gc.SetStrokeColor(color.RGBA{0x00, 0x00, 0x00, 0xff})
+		gc.SetLineWidth(20)
+	} else {
+		gc.SetStrokeColor(color.RGBA{0x88, 0x88, 0x88, 0xff})
+		gc.SetLineWidth(12)
+	}
 	initX, initZ := 0.0, 0.0
-	// size := len(aiw)
+
 	for _, data := range aiw {
 		if data.Type != t {
 			continue
@@ -139,4 +129,14 @@ func drawType(gc draw2d.GraphicContext, aiw AIW, minX, maxX, minY, maxY, minZ, m
 	if t == 0 {
 		gc.LineTo(initX, initZ)
 	}
+	invertY(gc, rect, 0.1)
+
+	if rotate {
+		gc.Rotate(math.Pi / 2)
+		f := width / height
+		gc.Translate(0, -f*float64(rect.Max.Y))
+	}
+
+	gc.Stroke()
+	gc.Restore()
 }

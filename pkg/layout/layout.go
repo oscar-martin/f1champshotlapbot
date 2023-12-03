@@ -28,11 +28,7 @@ func BuildLayoutPNG(track string, aiw AIW) error {
 	minZ := math.Inf(1)
 	minType := 10000
 	maxType := 0
-	aiwFiltered := AIW{}
 	for _, data := range aiw {
-		if data.Type != 0 {
-			continue
-		}
 		if data.X > maxX {
 			maxX = data.X
 		}
@@ -57,13 +53,12 @@ func BuildLayoutPNG(track string, aiw AIW) error {
 		if data.Type < minType {
 			minType = data.Type
 		}
-		aiwFiltered = append(aiwFiltered, data)
 	}
 	// fmt.Println(len(aiw))
 	// fmt.Printf("X: (%f, %f)\n", minX, maxX)
 	// fmt.Printf("Y: (%f, %f)\n", minY, maxY)
 	// fmt.Printf("Z: (%f, %f)\n", minZ, maxZ)
-	return drawImage(track, aiwFiltered, math.Abs(minX), maxX, math.Abs(minY), maxY, math.Abs(minZ), maxZ)
+	return drawImage(track, aiw, math.Abs(minX), maxX, math.Abs(minY), maxY, math.Abs(minZ), maxZ)
 }
 
 // Flips the image around the Y axis.
@@ -95,23 +90,22 @@ func drawImage(filepath string, aiw AIW, minX, maxX, minY, maxY, minZ, maxZ floa
 	// Set some properties
 	// gc.SetFillColor(color.RGBA{0x44, 0xff, 0x44, 0xff})
 	gc.SetStrokeColor(color.RGBA{0x00, 0x00, 0x00, 0xff})
-	gc.SetLineWidth(30)
+	gc.SetLineWidth(10)
 
 	// Draw a closed shape
 	gc.BeginPath() // Initialize a new path
-	initX, initZ := 0.0, 0.0
-	for _, data := range aiw {
-		x := data.X + minX
-		z := data.Z + minZ
-		if initX == 0.0 {
-			gc.MoveTo(x, z) // Move to a position to start the new path
-			initX, initZ = x, z
-		} else {
-			gc.LineTo(x, z)
+	for i := 0; i < 2; i++ {
+		aiwFiltered := AIW{}
+		for _, data := range aiw {
+			if data.Type == i {
+				aiwFiltered = append(aiwFiltered, data)
+			}
 		}
+		drawType(gc, aiwFiltered, minX, maxX, minY, maxY, minZ, maxZ, i)
 	}
-	gc.LineTo(initX, initZ)
-	gc.Close()
+
+	// gc.Close()
+
 	invertY(gc, dest.Rect, 0.1)
 
 	if rotate {
@@ -124,4 +118,25 @@ func drawImage(filepath string, aiw AIW, minX, maxX, minY, maxY, minZ, maxZ floa
 
 	// Save to file
 	return draw2dimg.SaveToPngFile(filepath, dest)
+}
+
+func drawType(gc draw2d.GraphicContext, aiw AIW, minX, maxX, minY, maxY, minZ, maxZ float64, t int) {
+	initX, initZ := 0.0, 0.0
+	// size := len(aiw)
+	for _, data := range aiw {
+		if data.Type != t {
+			continue
+		}
+		x := data.X + minX
+		z := data.Z + minZ
+		if initX == 0.0 && initZ == 0.0 {
+			gc.MoveTo(x, z) // Move to a position to start the new path
+			initX, initZ = x, z
+		} else {
+			gc.LineTo(x, z)
+		}
+	}
+	if t == 0 {
+		gc.LineTo(initX, initZ)
+	}
 }

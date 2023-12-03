@@ -133,10 +133,7 @@ func createServers(rf2Servers string) ([]servers.Server, error) {
 		if len(serverData) != 2 {
 			return nil, fmt.Errorf("Invalid server data: %s", serverStr)
 		}
-		server := servers.Server{
-			ID:  serverData[0],
-			URL: serverData[1],
-		}
+		server := servers.NewServer(serverData[0], serverData[1])
 		ss = append(ss, server)
 	}
 	return ss, nil

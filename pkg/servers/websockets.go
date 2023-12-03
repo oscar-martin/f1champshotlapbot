@@ -3,6 +3,7 @@ package servers
 import (
 	"context"
 	"encoding/json"
+	"f1champshotlapsbot/pkg/thumbnails"
 	"fmt"
 	"log"
 	"math"
@@ -162,46 +163,48 @@ type RaceCompletion struct {
 }
 
 type SessionInfo struct {
-	WebSocketRunning   bool           `json:"wsRunning,omitempty"`
-	RecevingData       bool           `json:"recevingData,omitempty"`
-	TrackName          string         `json:"trackName"`
-	Session            string         `json:"session"`
-	CurrentEventTime   float64        `json:"currentEventTime"`
-	EndEventTime       float64        `json:"endEventTime"`
-	MaximumLaps        int            `json:"maximumLaps"`
-	LapDistance        float64        `json:"lapDistance"`
-	NumberOfVehicles   int            `json:"numberOfVehicles"`
-	GamePhase          int            `json:"gamePhase"`
-	YellowFlagState    string         `json:"yellowFlagState"`
-	SectorFlag         []string       `json:"sectorFlag"`
-	StartLightFrame    int            `json:"startLightFrame"`
-	NumRedLights       int            `json:"numRedLights"`
-	InRealtime         bool           `json:"inRealtime"`
-	PlayerName         string         `json:"playerName"`
-	PlayerFileName     string         `json:"playerFileName"`
-	DarkCloud          float64        `json:"darkCloud"`
-	Raining            float64        `json:"raining"`
-	AmbientTemp        float64        `json:"ambientTemp"`
-	TrackTemp          float64        `json:"trackTemp"`
-	WindSpeed          WindSpeed      `json:"windSpeed"`
-	MinPathWetness     float64        `json:"minPathWetness"`
-	AveragePathWetness float64        `json:"averagePathWetness"`
-	MaxPathWetness     float64        `json:"maxPathWetness"`
-	GameMode           string         `json:"gameMode"`
-	PasswordProtected  bool           `json:"passwordProtected"`
-	ServerPort         int            `json:"serverPort"`
-	MaxPlayers         int            `json:"maxPlayers"`
-	ServerName         string         `json:"serverName"`
-	StartEventTime     float64        `json:"startEventTime"`
-	RaceCompletion     RaceCompletion `json:"raceCompletion"`
+	WebSocketRunning   bool                  `json:"wsRunning,omitempty"`
+	RecevingData       bool                  `json:"recevingData,omitempty"`
+	TrackName          string                `json:"trackName"`
+	Session            string                `json:"session"`
+	CurrentEventTime   float64               `json:"currentEventTime"`
+	EndEventTime       float64               `json:"endEventTime"`
+	MaximumLaps        int                   `json:"maximumLaps"`
+	LapDistance        float64               `json:"lapDistance"`
+	NumberOfVehicles   int                   `json:"numberOfVehicles"`
+	GamePhase          int                   `json:"gamePhase"`
+	YellowFlagState    string                `json:"yellowFlagState"`
+	SectorFlag         []string              `json:"sectorFlag"`
+	StartLightFrame    int                   `json:"startLightFrame"`
+	NumRedLights       int                   `json:"numRedLights"`
+	InRealtime         bool                  `json:"inRealtime"`
+	PlayerName         string                `json:"playerName"`
+	PlayerFileName     string                `json:"playerFileName"`
+	DarkCloud          float64               `json:"darkCloud"`
+	Raining            float64               `json:"raining"`
+	AmbientTemp        float64               `json:"ambientTemp"`
+	TrackTemp          float64               `json:"trackTemp"`
+	WindSpeed          WindSpeed             `json:"windSpeed"`
+	MinPathWetness     float64               `json:"minPathWetness"`
+	AveragePathWetness float64               `json:"averagePathWetness"`
+	MaxPathWetness     float64               `json:"maxPathWetness"`
+	GameMode           string                `json:"gameMode"`
+	PasswordProtected  bool                  `json:"passwordProtected"`
+	ServerPort         int                   `json:"serverPort"`
+	MaxPlayers         int                   `json:"maxPlayers"`
+	ServerName         string                `json:"serverName"`
+	StartEventTime     float64               `json:"startEventTime"`
+	RaceCompletion     RaceCompletion        `json:"raceCompletion"`
+	TrackThumbnail     *thumbnails.Thumbnail `json:"trackThumbnail"` // synthentic field
 }
 
 type ServerStarted struct {
-	ServerName  string  `json:"serverName"`
-	ServerID    string  `json:"serverId"`
-	SessionType string  `json:"sessionType"`
-	TrackName   string  `json:"trackName"`
-	EventTime   float64 `json:"eventTime"`
+	ServerName  string              `json:"serverName"`
+	ServerID    string              `json:"serverId"`
+	SessionType string              `json:"sessionType"`
+	TrackName   string              `json:"trackName"`
+	EventTime   float64             `json:"eventTime"`
+	SessionData SelectedSessionData `json:"sessionData,omitempty"`
 }
 
 func (ss ServerStarted) String() string {
@@ -306,7 +309,7 @@ func (s *Server) dispatchMessage(ctx context.Context, messageChan <-chan Message
 					continue
 				}
 				if s.StartSessionPendingNotification &&
-					s.SessionStarted != (ServerStarted{}) &&
+					s.SessionStarted.ServerID != "" &&
 					len(sdd) > 0 /* player */ {
 					s.StartSessionPendingNotification = false
 					// only send the notification once at least one player comes in
@@ -329,7 +332,7 @@ func (s *Server) dispatchMessage(ctx context.Context, messageChan <-chan Message
 					log.Printf("Error unmarshalling sessionInfo: %s\n", err.Error())
 					continue
 				}
-				if s.SessionStarted == (ServerStarted{}) {
+				if s.SessionStarted.ServerID == "" {
 					log.Printf("Server %s started receiving data for session: %s\n", s.Name, si.Session)
 					s.SessionStarted = ServerStarted{
 						ServerName:  s.Name,
@@ -338,7 +341,13 @@ func (s *Server) dispatchMessage(ctx context.Context, messageChan <-chan Message
 						TrackName:   si.TrackName,
 						EventTime:   si.CurrentEventTime,
 					}
+					go func() {
+						s.updateSelectedSessionData()
+						log.Printf("Loaded Track Thumbnail: %s\n", s.Thumbnail.String())
+					}()
 				}
+				si.TrackThumbnail = s.Thumbnail
+
 				// fmt.Print("!!!!!!updating sessionInfo!!!!!!\n")
 				s.LiveSessionInfoDataChan <- s.fromMessageToLiveSessionInfoData(s.Name, s.ID, &si)
 			}

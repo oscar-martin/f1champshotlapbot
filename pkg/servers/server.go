@@ -1,7 +1,9 @@
 package servers
 
 import (
+	"f1champshotlapsbot/pkg/thumbnails"
 	"fmt"
+	"sync"
 )
 
 const (
@@ -30,6 +32,7 @@ func (s Sectors) TimeLap() float64 {
 }
 
 type Server struct {
+	mu                              *sync.Mutex
 	ID                              string `json:"id"`
 	URL                             string `json:"url"`
 	Name                            string
@@ -43,6 +46,20 @@ type Server struct {
 	LiveSessionInfoDataChan         chan LiveSessionInfoData     `json:"-"`
 	LiveStandingHistoryChan         chan LiveStandingHistoryData `json:"-"`
 	LiveStandingChan                chan LiveStandingData        `json:"-"`
+	Thumbnail                       *thumbnails.Thumbnail        `json:"thumbnail"`
+}
+
+func NewServer(id, url string) Server {
+	return Server{
+		mu:                   &sync.Mutex{},
+		ID:                   id,
+		URL:                  url,
+		WebSocketRunning:     false,
+		RecevingData:         false,
+		BestSectorsForDriver: make(map[string]Sectors),
+		BestLapForDriver:     make(map[string]int),
+		TopSpeedForDriver:    make(map[string]map[int]float64),
+	}
 }
 
 func (s Server) Status() string {
@@ -62,12 +79,15 @@ func (s Server) StatusAndName() string {
 }
 
 func (s *Server) reset() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.RecevingData = false
 	s.StartSessionPendingNotification = false
 	s.BestSectorsForDriver = make(map[string]Sectors)
 	s.BestLapForDriver = make(map[string]int)
 	s.TopSpeedForDriver = make(map[string]map[int]float64)
 	s.SessionStarted = ServerStarted{}
+	s.Thumbnail = nil
 	{
 		body := map[string][]StandingHistoryDriverData{}
 		s.LiveStandingHistoryChan <- s.fromMessageToLiveStandingHistoryData(s.Name, s.ID, &body)

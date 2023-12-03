@@ -151,30 +151,44 @@ func (sa *ServerApp) AcceptButton(button string) (bool, func(ctx context.Context
 			if si.MaximumLaps < 100 {
 				laps = fmt.Sprintf("%d", si.MaximumLaps)
 			}
-			msg := tgbotapi.NewMessage(chatId,
-				fmt.Sprintf(`%s:
-
-	‣ Circuito: %s (%0.fm)
-	‣ Tiempo restante: %s
-	‣ Sesión: %s (Vueltas: %s)
-	‣ Coches: %d
-	‣ Lluvia: %.1f%% (min: %.1f%%. max: %.1f%%)
-	‣ Temperatura (Pista/Ambiente): %0.fºC/%0.fºC
-	`,
-					sa.liveSessionInfoData.ServerName,
-					si.TrackName,
-					si.LapDistance,
-					helper.SecondsToHoursAndMinutes(si.EndEventTime-si.CurrentEventTime),
-					si.Session,
-					laps,
-					si.NumberOfVehicles,
-					si.Raining,
-					si.MinPathWetness,
-					si.MaxPathWetness,
-					si.TrackTemp,
-					si.AmbientTemp))
-			msg.ReplyMarkup = sa.menuKeyboard
-			_, err := sa.bot.Send(msg)
+			text := fmt.Sprintf(`%s:
+			‣ Circuito: %s (%0.fm)
+			‣ Tiempo restante: %s
+			‣ Sesión: %s (Vueltas: %s)
+			‣ Coches: %d
+			‣ Lluvia: %.1f%% (min: %.1f%%. max: %.1f%%)
+			‣ Temperatura (Pista/Ambiente): %0.fºC/%0.fºC
+			`,
+				sa.liveSessionInfoData.ServerName,
+				si.TrackName,
+				si.LapDistance,
+				helper.SecondsToHoursAndMinutes(si.EndEventTime-si.CurrentEventTime),
+				si.Session,
+				laps,
+				si.NumberOfVehicles,
+				si.Raining,
+				si.MinPathWetness,
+				si.MaxPathWetness,
+				si.TrackTemp,
+				si.AmbientTemp)
+			err := fmt.Errorf("No track thumbnail available")
+			var rfd tgbotapi.RequestFileData
+			if si.TrackThumbnail != nil {
+				rfd, err = si.TrackThumbnail.FileData()
+			}
+			var cfg tgbotapi.Chattable
+			if err != nil {
+				log.Printf("Error getting thumbnail data: %s\n", err.Error())
+				msg := tgbotapi.NewMessage(chatId, text)
+				msg.ReplyMarkup = sa.menuKeyboard
+				cfg = msg
+			} else {
+				msg := tgbotapi.NewPhoto(chatId, rfd)
+				msg.Caption = text
+				msg.ReplyMarkup = sa.menuKeyboard
+				cfg = msg
+			}
+			_, err = sa.bot.Send(cfg)
 			return err
 		}
 	} else if button == sa.appMenu.ButtonBackTo() {

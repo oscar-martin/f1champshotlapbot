@@ -12,6 +12,7 @@ import (
 
 	"github.com/llgcode/draw2d"
 	"github.com/llgcode/draw2d/draw2dimg"
+	"github.com/llgcode/draw2d/draw2dkit"
 )
 
 type Data struct {
@@ -29,18 +30,38 @@ func main() {
 		track = os.Args[1]
 	}
 	jsonFile, err := os.Open(fmt.Sprintf("./track.%s.json", track))
+	carJsonFile, err := os.Open(fmt.Sprintf("./car.%s.json", track))
+	carEnabled := true
 	if err != nil {
-		panic(err)
+		// panic(err)
+		carEnabled = false
 	}
 	bytes, err := io.ReadAll(jsonFile)
 	if err != nil {
 		panic(err)
 	}
-	var aiw AIW
-	err = json.Unmarshal(bytes, &aiw)
+	var trackAiw AIW
+	err = json.Unmarshal(bytes, &trackAiw)
 	if err != nil {
 		panic(err)
 	}
+
+	var carAiw AIW
+	if carEnabled {
+		err := json.Unmarshal(bytes, &carAiw)
+		if err != nil {
+			panic(err)
+		}
+		bytes, err := io.ReadAll(carJsonFile)
+		if err != nil {
+			panic(err)
+		}
+		err = json.Unmarshal(bytes, &carAiw)
+		if err != nil {
+			panic(err)
+		}
+	}
+
 	maxX := 0.0
 	maxY := 0.0
 	maxZ := 0.0
@@ -49,8 +70,7 @@ func main() {
 	minZ := math.Inf(1)
 	minType := 10000
 	maxType := 0
-	aiwFiltered := AIW{}
-	for _, data := range aiw {
+	for _, data := range trackAiw {
 		if data.X > maxX {
 			maxX = data.X
 		}
@@ -75,13 +95,12 @@ func main() {
 		if data.Type < minType {
 			minType = data.Type
 		}
-		aiwFiltered = append(aiwFiltered, data)
 	}
-	fmt.Println(len(aiw))
+	fmt.Println(len(trackAiw))
 	fmt.Printf("X: (%f, %f)\n", minX, maxX)
 	fmt.Printf("Y: (%f, %f)\n", minY, maxY)
 	fmt.Printf("Z: (%f, %f)\n", minZ, maxZ)
-	drawImage(aiwFiltered, math.Abs(minX), maxX, math.Abs(minY), maxY, math.Abs(minZ), maxZ, maxType)
+	drawImage(trackAiw, carAiw, math.Abs(minX), maxX, math.Abs(minY), maxY, math.Abs(minZ), maxZ, maxType)
 }
 
 // Flips the image around the Y axis.
@@ -95,7 +114,7 @@ func invertY(gc draw2d.GraphicContext, rect image.Rectangle, factor float64) {
 	gc.Translate(x, y)
 }
 
-func drawImage(aiw AIW, minX, maxX, minY, maxY, minZ, maxZ float64, maxType int) {
+func drawImage(trackAiw, carAiw AIW, minX, maxX, minY, maxY, minZ, maxZ float64, maxType int) {
 	// Initialize the graphic context on an RGBA image
 	// dest := image.NewRGBA(image.Rect(0, 0, 1297, 1210.0))
 	// dest := image.NewRGBA(image.Rect(0, 0, int(minX+maxX), int(minZ+maxZ)))
@@ -113,14 +132,29 @@ func drawImage(aiw AIW, minX, maxX, minY, maxY, minZ, maxZ float64, maxType int)
 	dest := image.NewRGBA(image.Rect(0, 0, int(width), int(height)))
 	gc := draw2dimg.NewGraphicContext(dest)
 
+	gc.SetFillColor(image.White)
+	draw2dkit.RoundedRectangle(gc, 0, 0, width, height, 0, 0)
+	gc.FillStroke()
+
 	// Set some properties
 	// gc.SetFillColor(color.RGBA{0x44, 0xff, 0x44, 0xff})
 	// gc.SetStrokeColor(color.RGBA{0xff, 0xff, 0xff, 0xff})
 
 	// Draw a closed shape
-	for i := 1; i >= 0; i-- {
+	// for i := 100; i >= 2; i-- {
+	// 	aiwFiltered := AIW{}
+	// 	for _, data := range aiw {
+	// 		if data.Type == i {
+	// 			aiwFiltered = append(aiwFiltered, data)
+	// 		}
+	// 	}
+
+	// 	drawType(gc, aiwFiltered, minX, maxX, minY, maxY, minZ, maxZ, i, rotate, width, height, dest.Rect)
+	// }
+
+	for i := maxType; i >= 100; i-- {
 		aiwFiltered := AIW{}
-		for _, data := range aiw {
+		for _, data := range trackAiw {
 			if data.Type == i {
 				aiwFiltered = append(aiwFiltered, data)
 			}
@@ -129,28 +163,35 @@ func drawImage(aiw AIW, minX, maxX, minY, maxY, minZ, maxZ float64, maxType int)
 		drawType(gc, aiwFiltered, minX, maxX, minY, maxY, minZ, maxZ, i, rotate, width, height, dest.Rect)
 	}
 
-	// invertY(gc, dest.Rect, 0.05)
+	for i := 1; i >= 0; i-- {
+		aiwFiltered := AIW{}
+		for _, data := range trackAiw {
+			if data.Type == i {
+				aiwFiltered = append(aiwFiltered, data)
+			}
+		}
 
-	// if rotate {
-	// 	gc.Rotate(math.Pi / 2)
-	// 	f := width / height
-	// 	gc.Translate(0, -f*float64(dest.Rect.Max.Y))
-	// }
+		drawType(gc, aiwFiltered, minX, maxX, minY, maxY, minZ, maxZ, i, rotate, width, height, dest.Rect)
+	}
 
-	// gc.Stroke()
+	drawType(gc, carAiw, minX, maxX, minY, maxY, minZ, maxZ, -1, rotate, width, height, dest.Rect)
+
 	// Save to file
 	draw2dimg.SaveToPngFile("hello.png", dest)
 }
 
 func drawType(gc draw2d.GraphicContext, aiw AIW, minX, maxX, minY, maxY, minZ, maxZ float64, t int, rotate bool, width, height float64, rect image.Rectangle) {
-	// gc.BeginPath() // Initialize a new path
 	gc.Save()
+
 	if t == 0 {
+		gc.SetStrokeColor(image.Black)
+		gc.SetLineWidth(20)
+	} else if t == -1 {
 		gc.SetStrokeColor(image.White)
-		gc.SetLineWidth(15)
+		gc.SetLineWidth(3)
 	} else {
-		gc.SetStrokeColor(color.RGBA{0xaa, 0xaa, 0xaa, 0xff})
-		gc.SetLineWidth(10)
+		gc.SetStrokeColor(color.RGBA{0x88, 0x88, 0x88, 0xff})
+		gc.SetLineWidth(12)
 	}
 	initX, initZ := 0.0, 0.0
 	// size := len(aiw)

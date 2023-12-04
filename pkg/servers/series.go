@@ -65,32 +65,27 @@ type SelectedSessionData struct {
 	Car    Car    `json:"car"`
 }
 
-func (s *Server) updateSelectedSessionData() {
+func buildCurrentSessionTrackThumbnail(serverUrl string) thumbnails.Thumbnail {
 	for {
-		err := s.updateSelectedSessionData0()
+		t, err := buildTrackThumbnail(serverUrl)
 		if err != nil {
 			delay := 15 * time.Second
 			log.Printf("Error updating selected session data: %s. It will be retried in %s\n", err, delay)
 			time.Sleep(delay)
 			continue
 		}
-		break
+		return t
 	}
 }
 
-func (s *Server) updateSelectedSessionData0() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.SessionStarted.SessionData.Track.ID != "" {
-		return nil
-	}
-	url := fmt.Sprintf("%s/rest/race/selection", s.URL)
+func buildTrackThumbnail(serverUrl string) (thumbnails.Thumbnail, error) {
+	t := thumbnails.Thumbnail{}
+	url := fmt.Sprintf("%s/rest/race/selection", serverUrl)
 	// fmt.Println(url)
 	response, err := http.Get(url)
 	if err != nil {
 		log.Printf("Error http-getting selected session: %s\n", err)
-		return err
+		return t, err
 	}
 	defer response.Body.Close()
 
@@ -98,16 +93,14 @@ func (s *Server) updateSelectedSessionData0() error {
 	err = json.NewDecoder(response.Body).Decode(&selectedSessionData)
 	if err != nil {
 		log.Printf("Error decoding selected session: %s\n", err)
-		return err
+		return t, err
 	}
 
-	s.SessionStarted.SessionData = selectedSessionData
-	th := thumbnails.NewTrackThumbnail(s.URL, selectedSessionData.Track.ID)
+	th := thumbnails.NewTrackThumbnail(serverUrl, selectedSessionData.Track.ID)
 	err = th.Prefetch()
 	if err != nil {
 		log.Printf("Error prefetching track thumbnail: %s\n", err)
-		return err
+		return t, err
 	}
-	s.Thumbnail = th
-	return nil
+	return *th, nil
 }

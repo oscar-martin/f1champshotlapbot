@@ -4,6 +4,7 @@ import (
 	"context"
 	"f1champshotlapsbot/pkg/caster"
 	"f1champshotlapsbot/pkg/pubsub"
+	"f1champshotlapsbot/pkg/thumbnails"
 	"log"
 	"sync"
 	"time"
@@ -25,6 +26,7 @@ type Manager struct {
 	liveSessionInfoDataCaster     caster.ChannelCaster[LiveSessionInfoData]
 	liveStandingDataCaster        caster.ChannelCaster[LiveStandingData]
 	liveStandingHistoryDataCaster caster.ChannelCaster[LiveStandingHistoryData]
+	trackThumbnailDataCaster      caster.ChannelCaster[thumbnails.Thumbnail]
 }
 
 func NewManager(ctx context.Context, bot *tgbotapi.BotAPI, servers []Server, pubsubMgr *pubsub.PubSub, newSessionChannel chan<- ServerStarted) (*Manager, error) {
@@ -36,6 +38,7 @@ func NewManager(ctx context.Context, bot *tgbotapi.BotAPI, servers []Server, pub
 		liveSessionInfoDataCaster:     caster.JSONChannelCaster[LiveSessionInfoData]{},
 		liveStandingDataCaster:        caster.JSONChannelCaster[LiveStandingData]{},
 		liveStandingHistoryDataCaster: caster.JSONChannelCaster[LiveStandingHistoryData]{},
+		trackThumbnailDataCaster:      caster.JSONChannelCaster[thumbnails.Thumbnail]{},
 		pubsubMgr:                     pubsubMgr,
 	}
 
@@ -69,6 +72,7 @@ func (sm *Manager) initializeServers() error {
 		sm.servers[i].LiveSessionInfoDataChan = make(chan LiveSessionInfoData)
 		sm.servers[i].LiveStandingChan = make(chan LiveStandingData)
 		sm.servers[i].LiveStandingHistoryChan = make(chan LiveStandingHistoryData)
+		sm.servers[i].ThumbnailChan = make(chan thumbnails.Thumbnail)
 
 		go func(idx int) {
 			for liveSessionInfo := range sm.servers[idx].LiveSessionInfoDataChan {
@@ -91,14 +95,22 @@ func (sm *Manager) initializeServers() error {
 			}
 		}(i)
 		go func(idx int) {
-			// fmt.Printf("Starting live standing history goroutine for server %s\n", sm.servers[idx].ID)
 			for liveStanding := range sm.servers[idx].LiveStandingHistoryChan {
-				// fmt.Printf("Received live standing history for server %s\n", sm.servers[idx].ID)
 				payload, err := sm.liveStandingHistoryDataCaster.To(liveStanding)
 				if err != nil {
 					log.Printf("Error casting live standing history to json: %s", err.Error())
 				} else {
 					sm.pubsubMgr.Publish(PubSubStintDataPreffix+sm.servers[idx].ID, payload)
+				}
+			}
+		}(i)
+		go func(idx int) {
+			for thumbnail := range sm.servers[idx].ThumbnailChan {
+				payload, err := sm.trackThumbnailDataCaster.To(thumbnail)
+				if err != nil {
+					log.Printf("Error casting thumbnail to json: %s", err.Error())
+				} else {
+					sm.pubsubMgr.Publish(thumbnails.PubSubThumbnailPreffix+sm.servers[idx].ID, payload)
 				}
 			}
 		}(i)

@@ -8,6 +8,7 @@ import (
 	"f1champshotlapsbot/pkg/menus"
 	"f1champshotlapsbot/pkg/pubsub"
 	"f1champshotlapsbot/pkg/servers"
+	"f1champshotlapsbot/pkg/thumbnails"
 	"fmt"
 	"log"
 	"strings"
@@ -32,7 +33,10 @@ type ServerApp struct {
 	serverID                      string
 	liveSessionInfoData           servers.LiveSessionInfoData
 	liveSessionInfoDataUpdateChan <-chan string
-	caster                        caster.ChannelCaster[servers.LiveSessionInfoData]
+	liveSessionInfoDataCaster     caster.ChannelCaster[servers.LiveSessionInfoData]
+	trackThumbnailData            thumbnails.Thumbnail
+	trackThumbnailDataUpdateChan  <-chan string
+	trackThumbnailCaster          caster.ChannelCaster[thumbnails.Thumbnail]
 	mu                            sync.Mutex
 }
 
@@ -48,11 +52,14 @@ func NewServerApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, pubsubMgr
 		bot:                           bot,
 		appMenu:                       appMenu,
 		serverID:                      serverID,
-		caster:                        caster.JSONChannelCaster[servers.LiveSessionInfoData]{},
+		liveSessionInfoDataCaster:     caster.JSONChannelCaster[servers.LiveSessionInfoData]{},
 		liveSessionInfoDataUpdateChan: pubsubMgr.Subscribe(servers.PubSubSessionInfoPreffix + serverID),
+		trackThumbnailCaster:          caster.JSONChannelCaster[thumbnails.Thumbnail]{},
+		trackThumbnailDataUpdateChan:  pubsubMgr.Subscribe(thumbnails.PubSubThumbnailPreffix + serverID),
 	}
 
-	go sa.updater()
+	go sa.liveSessionInfoUpdater()
+	go sa.trackThumbnailUpdater()
 
 	gridAppMenu := menus.NewApplicationMenu("", serverID, sa)
 	gridApp := NewGridApp(bot, gridAppMenu, pubsubMgr, serverID)
@@ -68,7 +75,7 @@ func NewServerApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, pubsubMgr
 	return sa
 }
 
-func (sa *ServerApp) update(lsid servers.LiveSessionInfoData) {
+func (sa *ServerApp) update(lsid servers.LiveSessionInfoData, t thumbnails.Thumbnail) {
 	stint := buttonStint + " " + lsid.ServerName
 	grid := buttonGrid + " " + lsid.ServerName
 	info := buttonInfo + " " + lsid.ServerName
@@ -85,18 +92,33 @@ func (sa *ServerApp) update(lsid servers.LiveSessionInfoData) {
 
 	sa.menuKeyboard = menuKeyboard
 	sa.liveSessionInfoData = lsid
+	sa.trackThumbnailData = t
 }
 
-func (sa *ServerApp) updater() {
+func (sa *ServerApp) liveSessionInfoUpdater() {
 	for payload := range sa.liveSessionInfoDataUpdateChan {
 		// fmt.Println("Updating SessionInfo")
-		s, err := sa.caster.From(payload)
+		s, err := sa.liveSessionInfoDataCaster.From(payload)
 		if err != nil {
 			log.Printf("Error casting SessionInfo: %s\n", err.Error())
 			continue
 		}
 		sa.mu.Lock()
-		sa.update(s)
+		sa.update(s, sa.trackThumbnailData)
+		sa.mu.Unlock()
+	}
+}
+
+func (sa *ServerApp) trackThumbnailUpdater() {
+	for payload := range sa.trackThumbnailDataUpdateChan {
+		// fmt.Println("Updating SessionInfo")
+		t, err := sa.trackThumbnailCaster.From(payload)
+		if err != nil {
+			log.Printf("Error casting thumbnail: %s\n", err.Error())
+			continue
+		}
+		sa.mu.Lock()
+		sa.update(sa.liveSessionInfoData, t)
 		sa.mu.Unlock()
 	}
 }
@@ -173,8 +195,8 @@ func (sa *ServerApp) AcceptButton(button string) (bool, func(ctx context.Context
 				si.AmbientTemp)
 			err := fmt.Errorf("No track thumbnail available")
 			var rfd tgbotapi.RequestFileData
-			if si.TrackThumbnail != nil {
-				rfd, err = si.TrackThumbnail.FileData()
+			if !sa.trackThumbnailData.IsZero() {
+				rfd, err = sa.trackThumbnailData.FileData()
 			}
 			var cfg tgbotapi.Chattable
 			if err != nil {

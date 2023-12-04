@@ -58,7 +58,7 @@ func BuildLayoutPNG(track string, aiw AIW) error {
 	// fmt.Printf("X: (%f, %f)\n", minX, maxX)
 	// fmt.Printf("Y: (%f, %f)\n", minY, maxY)
 	// fmt.Printf("Z: (%f, %f)\n", minZ, maxZ)
-	return drawImage(track, aiw, math.Abs(minX), maxX, math.Abs(minY), maxY, math.Abs(minZ), maxZ)
+	return drawImage(track, aiw, math.Abs(minX), maxX, math.Abs(minY), maxY, math.Abs(minZ), maxZ, maxType)
 }
 
 // Flips the image around the Y axis.
@@ -72,7 +72,7 @@ func invertY(gc draw2d.GraphicContext, rect image.Rectangle, factor float64) {
 	gc.Translate(x, y)
 }
 
-func drawImage(filepath string, aiw AIW, minX, maxX, minY, maxY, minZ, maxZ float64) error {
+func drawImage(filepath string, aiw AIW, minX, maxX, minY, maxY, minZ, maxZ float64, maxType int) error {
 	// Initialize the graphic context on an RGBA image
 	width := minX + maxX
 	height := minZ + maxZ
@@ -87,7 +87,18 @@ func drawImage(filepath string, aiw AIW, minX, maxX, minY, maxY, minZ, maxZ floa
 	dest := image.NewRGBA(image.Rect(0, 0, int(width), int(height)))
 	gc := draw2dimg.NewGraphicContext(dest)
 
-	// Draw shapes
+	// Draw shapes boxes
+	for i := maxType; i >= 100; i-- {
+		aiwFiltered := AIW{}
+		for _, data := range aiw {
+			if data.Type == i {
+				aiwFiltered = append(aiwFiltered, data)
+			}
+		}
+		drawType(gc, aiwFiltered, minX, maxX, minY, maxY, minZ, maxZ, i, rotate, width, height, dest.Rect)
+	}
+
+	// Draw pitlane and main track
 	for i := 1; i >= 0; i-- {
 		aiwFiltered := AIW{}
 		for _, data := range aiw {

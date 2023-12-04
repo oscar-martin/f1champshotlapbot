@@ -46,7 +46,7 @@ type Server struct {
 	LiveSessionInfoDataChan         chan LiveSessionInfoData     `json:"-"`
 	LiveStandingHistoryChan         chan LiveStandingHistoryData `json:"-"`
 	LiveStandingChan                chan LiveStandingData        `json:"-"`
-	Thumbnail                       *thumbnails.Thumbnail        `json:"thumbnail"`
+	ThumbnailChan                   chan thumbnails.Thumbnail    `json:"-"`
 }
 
 func NewServer(id, url string) Server {
@@ -87,7 +87,6 @@ func (s *Server) reset() {
 	s.BestLapForDriver = make(map[string]int)
 	s.TopSpeedForDriver = make(map[string]map[int]float64)
 	s.SessionStarted = ServerStarted{}
-	s.Thumbnail = nil
 	{
 		body := map[string][]StandingHistoryDriverData{}
 		s.LiveStandingHistoryChan <- s.fromMessageToLiveStandingHistoryData(s.Name, s.ID, &body)

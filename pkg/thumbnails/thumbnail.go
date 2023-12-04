@@ -12,7 +12,8 @@ import (
 )
 
 const (
-	thumbnailsDir = "./thumbnails"
+	thumbnailsDir          = "./thumbnails"
+	PubSubThumbnailPreffix = "thumbnail_"
 )
 
 func init() {

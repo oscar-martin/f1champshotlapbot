@@ -8,10 +8,12 @@ import (
 	"f1champshotlapsbot/pkg/menus"
 	"f1champshotlapsbot/pkg/pubsub"
 	"f1champshotlapsbot/pkg/servers"
+	"f1champshotlapsbot/pkg/thumbnails"
 	"fmt"
 	"log"
 	"strings"
 	"sync"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/jedib0t/go-pretty/v6/table"
@@ -19,6 +21,7 @@ import (
 
 const (
 	subcommandShowDrivers = "show_drivers"
+	subcommandShowCars    = "show_cars"
 	tableLap              = "LAP"
 )
 
@@ -26,6 +29,7 @@ type StintApp struct {
 	bot                               *tgbotapi.BotAPI
 	appMenu                           menus.ApplicationMenu
 	serverID                          string
+	serverURL                         string
 	liveStandingHistoryData           servers.LiveStandingHistoryData
 	liveStandingHistoryDataUpdateChan <-chan string
 	liveStandingHistoryDataCaster     caster.ChannelCaster[servers.LiveStandingHistoryData]
@@ -36,7 +40,7 @@ type StintApp struct {
 	menuKeyboard                      tgbotapi.ReplyKeyboardMarkup
 }
 
-func NewStintApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, pubsubMgr *pubsub.PubSub, serverID string) *StintApp {
+func NewStintApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, pubsubMgr *pubsub.PubSub, serverID, serverURL string) *StintApp {
 	menuKeyboard := tgbotapi.NewReplyKeyboard(
 		tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton(appMenu.ButtonBackTo()),
@@ -47,6 +51,7 @@ func NewStintApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, pubsubMgr 
 		bot:                               bot,
 		appMenu:                           appMenu,
 		serverID:                          serverID,
+		serverURL:                         serverURL,
 		liveStandingHistoryDataCaster:     caster.JSONChannelCaster[servers.LiveStandingHistoryData]{},
 		liveStandingHistoryDataUpdateChan: pubsubMgr.Subscribe(servers.PubSubStintDataPreffix + serverID),
 		liveSessionInfoDataCaster:         caster.JSONChannelCaster[servers.LiveSessionInfoData]{},
@@ -102,6 +107,12 @@ func (sa *StintApp) AcceptCallback(query *tgbotapi.CallbackQuery) (bool, func(ct
 		defer sa.mu.Unlock()
 		return true, func(ctx context.Context, query *tgbotapi.CallbackQuery) error {
 			return sa.handleStintDataCallbackQuery(query.Message.Chat.ID, &query.Message.MessageID, data[2:]...)
+		}
+	} else if data[0] == subcommandShowCars && data[1] == sa.serverID {
+		sa.mu.Lock()
+		defer sa.mu.Unlock()
+		return true, func(ctx context.Context, query *tgbotapi.CallbackQuery) error {
+			return sa.handleCarDataCallbackQuery(query.Message.Chat.ID, &query.Message.MessageID, data[2])
 		}
 	}
 	return false, nil
@@ -159,6 +170,59 @@ func (sa *StintApp) handleStintDataCallbackQuery(chatId int64, messageId *int, d
 		return err
 	}
 	return nil
+}
+
+func (sa *StintApp) handleCarDataCallbackQuery(chatId int64, messageId *int, driver string) error {
+	driverData, found := sa.liveStandingHistoryData.DriversData[driver]
+	if found && len(driverData) > 0 {
+		if driverData[0].CarId != "" {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			carThChan := make(chan thumbnails.Thumbnail)
+			errChan := make(chan error)
+			go func() {
+				carTh, err := thumbnails.BuildCarThumbnail(sa.serverURL, driverData[0].CarId)
+				if err != nil {
+					errChan <- err
+					return
+				}
+				carThChan <- carTh
+			}()
+			select {
+			case <-ctx.Done():
+				message := fmt.Sprintf("Expiró el tiempo de espera para la descarga de la imagen del coche de %s", driver)
+				msg := tgbotapi.NewMessage(chatId, message)
+				_, err := sa.bot.Send(msg)
+				return err
+			case err := <-errChan:
+				message := fmt.Sprintf("No se pudo leer la imagen del coche de %s", driver)
+				msg := tgbotapi.NewMessage(chatId, message)
+				_, err = sa.bot.Send(msg)
+				return err
+			case carTh := <-carThChan:
+				rfd, err := carTh.FileData()
+				if err != nil {
+					message := fmt.Sprintf("No se pudo leer la imagen del coche de %s", driver)
+					msg := tgbotapi.NewMessage(chatId, message)
+					_, err := sa.bot.Send(msg)
+					return err
+				}
+				msg := tgbotapi.NewPhoto(chatId, rfd)
+				_, err = sa.bot.Send(msg)
+				return err
+			}
+		} else {
+			message := fmt.Sprintf("No hay datos para el piloto %s", driver)
+			msg := tgbotapi.NewMessage(chatId, message)
+			_, err := sa.bot.Send(msg)
+			return err
+		}
+	} else {
+		message := fmt.Sprintf("No hay datos para el piloto %s", driver)
+		msg := tgbotapi.NewMessage(chatId, message)
+		_, err := sa.bot.Send(msg)
+		return err
+	}
 }
 
 func (sa *StintApp) sendStintData(chatId int64, messageId *int, driverData []servers.StandingHistoryDriverData, driverName, serverName, serverId, infoType string) error {
@@ -238,6 +302,9 @@ func getStintInlineKeyboard(driver, serverID string) tgbotapi.InlineKeyboardMark
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardTimes+" "+symbolTimes, fmt.Sprintf("%s:%s:%s:%s", subcommandShowDrivers, serverID, inlineKeyboardTimes, driver)),
 			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardSectors+" "+symbolSectors, fmt.Sprintf("%s:%s:%s:%s", subcommandShowDrivers, serverID, inlineKeyboardSectors, driver)),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardCar+" "+symbolTeam, fmt.Sprintf("%s:%s:%s", subcommandShowCars, serverID, driver)),
 		),
 	)
 }

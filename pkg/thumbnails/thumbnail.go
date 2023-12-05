@@ -23,19 +23,36 @@ func init() {
 	}
 }
 
+type pngBuilder func(url, filePath string) error
+
 type Thumbnail struct {
-	Id        string
-	FilePath  string
-	ServerUrl string
-	Endpoint  string
+	Id         string
+	FilePath   string
+	ServerUrl  string
+	Endpoint   string
+	pngBuilder pngBuilder
 }
 
-func NewTrackThumbnail(url, id string) *Thumbnail {
-	return &Thumbnail{
-		Id:        id,
-		Endpoint:  "rest/race/track/%s/trackmap",
-		ServerUrl: url,
+func BuildTrackThumbnail(url, id string) (Thumbnail, error) {
+	th := Thumbnail{
+		Id:         id,
+		Endpoint:   "rest/race/track/%s/trackmap",
+		ServerUrl:  url,
+		pngBuilder: pngBuilderForTrack,
 	}
+
+	return th, th.build()
+}
+
+func BuildCarThumbnail(url, id string) (Thumbnail, error) {
+	th := Thumbnail{
+		Id:         id,
+		Endpoint:   "rest/race/car/%s/image?type=IMAGE_SMALL",
+		ServerUrl:  url,
+		pngBuilder: pngBuilderForCar,
+	}
+
+	return th, th.build()
 }
 
 func (t Thumbnail) IsZero() bool {
@@ -50,32 +67,33 @@ func (t Thumbnail) requestUrl() string {
 	return fmt.Sprintf("%s/%s", t.ServerUrl, fmt.Sprintf(t.Endpoint, t.Id))
 }
 
-func (t *Thumbnail) Prefetch() error {
-	_, err := t.FileData()
-	return err
-}
-
-func (t *Thumbnail) FileData() (tgbotapi.RequestFileData, error) {
+func (t *Thumbnail) build() error {
 	if t.Id == "" {
-		return nil, fmt.Errorf("thumbnail is not initialized")
+		return fmt.Errorf("thumbnail is not initialized")
 	}
-	if t.FilePath != "" {
-		return tgbotapi.FilePath(t.FilePath), nil
-	}
-	aiwData, err := t.fetchAIWData()
-	if err != nil {
-		log.Printf("Error fetching track aiw data: %s\n", err)
-		return nil, err
-	}
-
 	filePath := t.buildFilePath()
-	err = layout.BuildLayoutPNG(filePath, aiwData)
-	if err != nil {
-		log.Printf("Error building layout png: %s\n", err)
-		return nil, err
+	if _, err := os.Stat(filePath); err == nil {
+		fmt.Printf("thumbnail %q already exists\n", t.Id)
+		t.FilePath = filePath
+	} else if os.IsNotExist(err) {
+		err := t.pngBuilder(t.requestUrl(), filePath)
+		if err != nil {
+			log.Printf("Error building png: %s\n", err)
+			return err
+		}
+	} else {
+		return err
 	}
 
 	t.FilePath = filePath
+	return nil
+}
+
+func (t *Thumbnail) FileData() (tgbotapi.RequestFileData, error) {
+	if t.Id == "" || t.FilePath == "" {
+		return nil, fmt.Errorf("thumbnail is not initialized")
+	}
+
 	return tgbotapi.FilePath(t.FilePath), nil
 }
 
@@ -83,16 +101,46 @@ func (t Thumbnail) buildFilePath() string {
 	return fmt.Sprintf("%s/%s.png", thumbnailsDir, t.Id)
 }
 
-func (t Thumbnail) fetchAIWData() (layout.AIW, error) {
-	url := t.requestUrl()
+func pngBuilderForTrack(url, filePath string) error {
 	response, err := http.Get(url)
 	if err != nil {
-		log.Printf("Error http-getting aiw data: %s\n", err)
-		return nil, err
+		return err
 	}
 	defer response.Body.Close()
 
 	var layoutData layout.AIW
 	err = json.NewDecoder(response.Body).Decode(&layoutData)
-	return layoutData, err
+	if err != nil {
+		return err
+	}
+	err = layout.BuildLayoutPNG(filePath, layoutData)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// create a pngBuilder from a http call
+func pngBuilderForCar(url, filePath string) error {
+	response, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("error getting car image: %s (%s)", response.Status, url)
+	}
+
+	file, err := os.Create(filePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	_, err = file.ReadFrom(response.Body)
+	if err != nil {
+		return err
+	}
+	return nil
 }

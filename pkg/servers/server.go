@@ -42,6 +42,7 @@ type Server struct {
 	BestSectorsForDriver            map[string]Sectors
 	BestLapForDriver                map[string]int
 	TopSpeedForDriver               map[string]map[int]float64
+	DriverToCarId                   map[string]string
 	SessionStarted                  ServerStarted
 	LiveSessionInfoDataChan         chan LiveSessionInfoData     `json:"-"`
 	LiveStandingHistoryChan         chan LiveStandingHistoryData `json:"-"`
@@ -57,6 +58,7 @@ func NewServer(id, url string) Server {
 		WebSocketRunning:     false,
 		RecevingData:         false,
 		BestSectorsForDriver: make(map[string]Sectors),
+		DriverToCarId:        make(map[string]string),
 		BestLapForDriver:     make(map[string]int),
 		TopSpeedForDriver:    make(map[string]map[int]float64),
 	}
@@ -84,6 +86,7 @@ func (s *Server) reset() {
 	s.RecevingData = false
 	s.StartSessionPendingNotification = false
 	s.BestSectorsForDriver = make(map[string]Sectors)
+	s.DriverToCarId = make(map[string]string)
 	s.BestLapForDriver = make(map[string]int)
 	s.TopSpeedForDriver = make(map[string]map[int]float64)
 	s.SessionStarted = ServerStarted{}

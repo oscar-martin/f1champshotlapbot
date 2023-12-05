@@ -81,13 +81,16 @@ func buildCurrentSessionTrackThumbnail(serverUrl string) thumbnails.Thumbnail {
 func buildTrackThumbnail(serverUrl string) (thumbnails.Thumbnail, error) {
 	t := thumbnails.Thumbnail{}
 	url := fmt.Sprintf("%s/rest/race/selection", serverUrl)
-	// fmt.Println(url)
 	response, err := http.Get(url)
 	if err != nil {
 		log.Printf("Error http-getting selected session: %s\n", err)
 		return t, err
 	}
 	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		return t, fmt.Errorf("error getting selected session: %s", response.Status)
+	}
 
 	var selectedSessionData SelectedSessionData
 	err = json.NewDecoder(response.Body).Decode(&selectedSessionData)
@@ -96,11 +99,10 @@ func buildTrackThumbnail(serverUrl string) (thumbnails.Thumbnail, error) {
 		return t, err
 	}
 
-	th := thumbnails.NewTrackThumbnail(serverUrl, selectedSessionData.Track.ID)
-	err = th.Prefetch()
+	th, err := thumbnails.BuildTrackThumbnail(serverUrl, selectedSessionData.Track.ID)
 	if err != nil {
 		log.Printf("Error prefetching track thumbnail: %s\n", err)
 		return t, err
 	}
-	return *th, nil
+	return th, nil
 }

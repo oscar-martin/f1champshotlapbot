@@ -47,7 +47,7 @@ func sanitizeServerName(name string) string {
 	return strings.TrimSpace(fixed)
 }
 
-func NewServerApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, pubsubMgr *pubsub.PubSub, serverID string) *ServerApp {
+func NewServerApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, pubsubMgr *pubsub.PubSub, serverID, serverURL string) *ServerApp {
 	sa := &ServerApp{
 		bot:                           bot,
 		appMenu:                       appMenu,
@@ -65,7 +65,7 @@ func NewServerApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, pubsubMgr
 	gridApp := NewGridApp(bot, gridAppMenu, pubsubMgr, serverID)
 
 	stintAppMenu := menus.NewApplicationMenu("", serverID, sa)
-	stintApp := NewStintApp(bot, stintAppMenu, pubsubMgr, serverID)
+	stintApp := NewStintApp(bot, stintAppMenu, pubsubMgr, serverID, serverURL)
 
 	accepters := []apps.Accepter{gridApp, stintApp}
 

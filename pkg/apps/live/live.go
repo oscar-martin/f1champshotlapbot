@@ -47,7 +47,7 @@ func NewLiveApp(ctx context.Context, bot *tgbotapi.BotAPI, pubsubMgr *pubsub.Pub
 	la.accepters = []apps.Accepter{}
 	for _, server := range ss {
 		serverAppMenu := menus.NewApplicationMenu(server.StatusAndName(), liveAppName, la)
-		serverApp := NewServerApp(la.bot, serverAppMenu, pubsubMgr, server.ID)
+		serverApp := NewServerApp(la.bot, serverAppMenu, pubsubMgr, server.ID, server.URL)
 		la.accepters = append(la.accepters, serverApp)
 	}
 

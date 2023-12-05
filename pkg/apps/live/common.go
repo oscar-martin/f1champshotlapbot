@@ -18,6 +18,7 @@ const (
 	inlineKeyboardUpdate            = "Actualizar"
 	inlineKeyboardDiff              = "Diferencia"
 	inlineKeyboardMaxSpeed          = "Máx. Vel"
+	inlineKeyboardCar               = "Coche"
 
 	symbolTimes    = "⏱"
 	symbolSectors  = "🔂"

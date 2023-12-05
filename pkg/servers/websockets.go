@@ -57,6 +57,7 @@ type StandingHistoryDriverData struct {
 	Pitting      bool    `json:"pitting"`
 	CarClass     string  `json:"carClass"`
 	TopSpeed     float64 `json:"topSpeed"` // synthetic field
+	CarId        string  `json:"carId"`    // synthetic field
 }
 
 type StandingDriverData struct {
@@ -390,6 +391,8 @@ func (s *Server) fromMessageToLiveStandingHistoryData(serverName, serverID strin
 				driversDataMap[driverName] = driversData
 			}
 
+			carId := s.DriverToCarId[driverName]
+
 			topSpeedForDriver, topSpeedForDriverFound := s.TopSpeedForDriver[driverName]
 
 			bestS1 := 0.0
@@ -404,7 +407,7 @@ func (s *Server) fromMessageToLiveStandingHistoryData(serverName, serverID strin
 					playerPosition = driversData[i].Position
 				}
 				playersPosition[driverName] = playerPosition
-
+				driversData[i].CarId = carId
 				if topSpeedForDriverFound {
 					driversData[i].TopSpeed = topSpeedForDriver[i]
 				} else {
@@ -513,6 +516,11 @@ func (s *Server) fromMessageToLiveStandingData(serverName, serverID string, data
 				}
 				data[i].BestLap = bestLap
 			}
+		}
+
+		// update driver car id
+		{
+			s.DriverToCarId[data[i].DriverName] = data[i].CarID
 		}
 	}
 

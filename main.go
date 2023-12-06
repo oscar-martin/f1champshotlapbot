@@ -19,8 +19,6 @@ import (
 	"syscall"
 	"time"
 
-	"f1champshotlapsbot/pkg/pubsub"
-
 	_ "net/http/pprof"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -35,10 +33,9 @@ const (
 )
 
 var (
-	domain    = ""
-	bot       *tgbotapi.BotAPI
-	app       apps.Accepter
-	pubsubMgr *pubsub.PubSub
+	domain = ""
+	bot    *tgbotapi.BotAPI
+	app    apps.Accepter
 )
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to `file`")
@@ -81,8 +78,6 @@ func main() {
 		log.Panic(err)
 	}
 
-	pubsubMgr = pubsub.NewPubSub()
-
 	// Set this to true to log all interactions with telegram servers
 	bot.Debug = false
 
@@ -117,13 +112,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error creating servers: %s", err.Error())
 	}
-	sm, err := servers.NewManager(ctx, bot, ss, pubsubMgr, newSessionChannel)
+	sm, err := servers.NewManager(ctx, bot, ss, newSessionChannel)
 	if err != nil {
 		log.Fatalf("Error creating servers manager: %s", err.Error())
 	}
 	go sm.Sync(refreshServersTicker, exitChan)
 
-	app, err = mainapp.NewMainApp(ctx, bot, domain, ss, pubsubMgr, exitChan, refreshHotlapsTicker, settings)
+	app, err = mainapp.NewMainApp(ctx, bot, domain, ss, exitChan, refreshHotlapsTicker, settings)
 	if err != nil {
 		log.Fatalf("Error creating main app: %s", err.Error())
 	}

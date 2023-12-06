@@ -3,9 +3,9 @@ package live
 import (
 	"bytes"
 	"context"
-	"f1champshotlapsbot/pkg/caster"
 	"f1champshotlapsbot/pkg/helper"
 	"f1champshotlapsbot/pkg/menus"
+	"f1champshotlapsbot/pkg/model"
 	"f1champshotlapsbot/pkg/pubsub"
 	"f1champshotlapsbot/pkg/servers"
 	"f1champshotlapsbot/pkg/thumbnails"
@@ -30,17 +30,17 @@ type StintApp struct {
 	appMenu                           menus.ApplicationMenu
 	serverID                          string
 	serverURL                         string
-	liveStandingHistoryData           servers.LiveStandingHistoryData
-	liveStandingHistoryDataUpdateChan <-chan string
-	liveStandingHistoryDataCaster     caster.ChannelCaster[servers.LiveStandingHistoryData]
-	liveSessionInfoData               servers.LiveSessionInfoData
-	liveSessionInfoDataUpdateChan     <-chan string
-	liveSessionInfoDataCaster         caster.ChannelCaster[servers.LiveSessionInfoData]
-	mu                                sync.Mutex
-	menuKeyboard                      tgbotapi.ReplyKeyboardMarkup
+	liveStandingHistoryData           model.LiveStandingHistoryData
+	liveStandingHistoryDataUpdateChan <-chan model.LiveStandingHistoryData
+
+	liveSessionInfoData           model.LiveSessionInfoData
+	liveSessionInfoDataUpdateChan <-chan model.LiveSessionInfoData
+
+	mu           sync.Mutex
+	menuKeyboard tgbotapi.ReplyKeyboardMarkup
 }
 
-func NewStintApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, pubsubMgr *pubsub.PubSub, serverID, serverURL string) *StintApp {
+func NewStintApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, serverID, serverURL string) *StintApp {
 	menuKeyboard := tgbotapi.NewReplyKeyboard(
 		tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton(appMenu.ButtonBackTo()),
@@ -52,10 +52,8 @@ func NewStintApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, pubsubMgr 
 		appMenu:                           appMenu,
 		serverID:                          serverID,
 		serverURL:                         serverURL,
-		liveStandingHistoryDataCaster:     caster.JSONChannelCaster[servers.LiveStandingHistoryData]{},
-		liveStandingHistoryDataUpdateChan: pubsubMgr.Subscribe(servers.PubSubStintDataPreffix + serverID),
-		liveSessionInfoDataCaster:         caster.JSONChannelCaster[servers.LiveSessionInfoData]{},
-		liveSessionInfoDataUpdateChan:     pubsubMgr.Subscribe(servers.PubSubSessionInfoPreffix + serverID),
+		liveStandingHistoryDataUpdateChan: pubsub.LiveStandingHistoryPubSub.Subscribe(servers.PubSubStintDataPreffix + serverID),
+		liveSessionInfoDataUpdateChan:     pubsub.LiveSessionInfoDataPubSub.Subscribe(servers.PubSubSessionInfoPreffix + serverID),
 		menuKeyboard:                      menuKeyboard,
 	}
 
@@ -66,30 +64,18 @@ func NewStintApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, pubsubMgr 
 }
 
 func (sa *StintApp) liveStandingHistoryDataUpdater() {
-	for payload := range sa.liveStandingHistoryDataUpdateChan {
-		// fmt.Println("Updating LiveStandingHistory")
-		lsd, err := sa.liveStandingHistoryDataCaster.From(payload)
-		if err != nil {
-			log.Printf("Error casting LiveStandingHistory: %s\n", err.Error())
-			continue
-		}
+	for lsd := range sa.liveStandingHistoryDataUpdateChan {
 		sa.update(lsd, sa.liveSessionInfoData)
 	}
 }
 
 func (sa *StintApp) liveSessionInfoDataUpdater() {
-	for payload := range sa.liveSessionInfoDataUpdateChan {
-		// fmt.Println("Updating SessionInfo")
-		lsi, err := sa.liveSessionInfoDataCaster.From(payload)
-		if err != nil {
-			log.Printf("Error casting SessionInfo: %s\n", err.Error())
-			continue
-		}
+	for lsi := range sa.liveSessionInfoDataUpdateChan {
 		sa.update(sa.liveStandingHistoryData, lsi)
 	}
 }
 
-func (sa *StintApp) update(lsd servers.LiveStandingHistoryData, lsi servers.LiveSessionInfoData) {
+func (sa *StintApp) update(lsd model.LiveStandingHistoryData, lsi model.LiveSessionInfoData) {
 	sa.mu.Lock()
 	defer sa.mu.Unlock()
 	sa.liveStandingHistoryData = lsd
@@ -232,7 +218,7 @@ func (sa *StintApp) handleCarDataCallbackQuery(chatId int64, messageId *int, dri
 	}
 }
 
-func (sa *StintApp) sendStintData(chatId int64, messageId *int, driverData []servers.StandingHistoryDriverData, driverName, serverName, serverId, infoType string) error {
+func (sa *StintApp) sendStintData(chatId int64, messageId *int, driverData []model.StandingHistoryDriverData, driverName, serverName, serverId, infoType string) error {
 	if len(driverData) > 0 {
 		var b bytes.Buffer
 		t := table.NewWriter()

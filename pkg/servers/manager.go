@@ -2,7 +2,7 @@ package servers
 
 import (
 	"context"
-	"f1champshotlapsbot/pkg/caster"
+	"f1champshotlapsbot/pkg/model"
 	"f1champshotlapsbot/pkg/pubsub"
 	"f1champshotlapsbot/pkg/thumbnails"
 	"log"
@@ -18,28 +18,18 @@ var (
 )
 
 type Manager struct {
-	ctx                           context.Context
-	servers                       []Server
-	bot                           *tgbotapi.BotAPI
-	pubsubMgr                     *pubsub.PubSub
-	newSessionChannel             chan<- ServerStarted
-	liveSessionInfoDataCaster     caster.ChannelCaster[LiveSessionInfoData]
-	liveStandingDataCaster        caster.ChannelCaster[LiveStandingData]
-	liveStandingHistoryDataCaster caster.ChannelCaster[LiveStandingHistoryData]
-	trackThumbnailDataCaster      caster.ChannelCaster[thumbnails.Thumbnail]
+	ctx               context.Context
+	servers           []Server
+	bot               *tgbotapi.BotAPI
+	newSessionChannel chan<- ServerStarted
 }
 
-func NewManager(ctx context.Context, bot *tgbotapi.BotAPI, servers []Server, pubsubMgr *pubsub.PubSub, newSessionChannel chan<- ServerStarted) (*Manager, error) {
+func NewManager(ctx context.Context, bot *tgbotapi.BotAPI, servers []Server, newSessionChannel chan<- ServerStarted) (*Manager, error) {
 	m := &Manager{
-		ctx:                           ctx,
-		bot:                           bot,
-		servers:                       servers,
-		newSessionChannel:             newSessionChannel,
-		liveSessionInfoDataCaster:     caster.JSONChannelCaster[LiveSessionInfoData]{},
-		liveStandingDataCaster:        caster.JSONChannelCaster[LiveStandingData]{},
-		liveStandingHistoryDataCaster: caster.JSONChannelCaster[LiveStandingHistoryData]{},
-		trackThumbnailDataCaster:      caster.JSONChannelCaster[thumbnails.Thumbnail]{},
-		pubsubMgr:                     pubsubMgr,
+		ctx:               ctx,
+		bot:               bot,
+		servers:           servers,
+		newSessionChannel: newSessionChannel,
 	}
 
 	err := m.initializeServers()
@@ -69,51 +59,45 @@ func (sm *Manager) initializeServers() error {
 		sm.servers[i].BestSectorsForDriver = make(map[string]Sectors)
 		sm.servers[i].BestLapForDriver = make(map[string]int)
 		sm.servers[i].TopSpeedForDriver = make(map[string]map[int]float64)
-		sm.servers[i].LiveSessionInfoDataChan = make(chan LiveSessionInfoData)
-		sm.servers[i].LiveStandingChan = make(chan LiveStandingData)
-		sm.servers[i].LiveStandingHistoryChan = make(chan LiveStandingHistoryData)
+		sm.servers[i].LiveSessionInfoDataChan = make(chan model.LiveSessionInfoData)
+		sm.servers[i].LiveStandingChan = make(chan model.LiveStandingData)
+		sm.servers[i].LiveStandingHistoryChan = make(chan model.LiveStandingHistoryData)
 		sm.servers[i].ThumbnailChan = make(chan thumbnails.Thumbnail)
 
 		go func(idx int) {
-			for liveSessionInfo := range sm.servers[idx].LiveSessionInfoDataChan {
-				payload, err := sm.liveSessionInfoDataCaster.To(liveSessionInfo)
-				if err != nil {
-					log.Printf("Error casting session info to json: %s", err.Error())
-				} else {
-					sm.pubsubMgr.Publish(PubSubSessionInfoPreffix+sm.servers[idx].ID, payload)
+			for {
+				select {
+				case liveSessionInfo := <-sm.servers[idx].LiveSessionInfoDataChan:
+					pubsub.LiveSessionInfoDataPubSub.Publish(PubSubSessionInfoPreffix+sm.servers[idx].ID, liveSessionInfo)
+				case liveTiming := <-sm.servers[idx].LiveStandingChan:
+					pubsub.LiveStandingDataPubSub.Publish(PubSubDriversSessionPreffix+sm.servers[idx].ID, liveTiming)
+				case liveStanding := <-sm.servers[idx].LiveStandingHistoryChan:
+					pubsub.LiveStandingHistoryPubSub.Publish(PubSubStintDataPreffix+sm.servers[idx].ID, liveStanding)
+				case thumbnail := <-sm.servers[idx].ThumbnailChan:
+					pubsub.TrackThumbnailPubSub.Publish(thumbnails.PubSubThumbnailPreffix+sm.servers[idx].ID, thumbnail)
 				}
 			}
 		}(i)
-		go func(idx int) {
-			for liveTiming := range sm.servers[idx].LiveStandingChan {
-				payload, err := sm.liveStandingDataCaster.To(liveTiming)
-				if err != nil {
-					log.Printf("Error casting live standing to json: %s", err.Error())
-				} else {
-					sm.pubsubMgr.Publish(PubSubDriversSessionPreffix+sm.servers[idx].ID, payload)
-				}
-			}
-		}(i)
-		go func(idx int) {
-			for liveStanding := range sm.servers[idx].LiveStandingHistoryChan {
-				payload, err := sm.liveStandingHistoryDataCaster.To(liveStanding)
-				if err != nil {
-					log.Printf("Error casting live standing history to json: %s", err.Error())
-				} else {
-					sm.pubsubMgr.Publish(PubSubStintDataPreffix+sm.servers[idx].ID, payload)
-				}
-			}
-		}(i)
-		go func(idx int) {
-			for thumbnail := range sm.servers[idx].ThumbnailChan {
-				payload, err := sm.trackThumbnailDataCaster.To(thumbnail)
-				if err != nil {
-					log.Printf("Error casting thumbnail to json: %s", err.Error())
-				} else {
-					sm.pubsubMgr.Publish(thumbnails.PubSubThumbnailPreffix+sm.servers[idx].ID, payload)
-				}
-			}
-		}(i)
+		// go func(idx int) {
+		// 	for liveSessionInfo := range sm.servers[idx].LiveSessionInfoDataChan {
+		// 		pubsub.LiveSessionInfoDataPubSub.Publish(PubSubSessionInfoPreffix+sm.servers[idx].ID, liveSessionInfo)
+		// 	}
+		// }(i)
+		// go func(idx int) {
+		// 	for liveTiming := range sm.servers[idx].LiveStandingChan {
+		// 		pubsub.LiveStandingDataPubSub.Publish(PubSubDriversSessionPreffix+sm.servers[idx].ID, liveTiming)
+		// 	}
+		// }(i)
+		// go func(idx int) {
+		// 	for liveStanding := range sm.servers[idx].LiveStandingHistoryChan {
+		// 		pubsub.LiveStandingHistoryPubSub.Publish(PubSubStintDataPreffix+sm.servers[idx].ID, liveStanding)
+		// 	}
+		// }(i)
+		// go func(idx int) {
+		// 	for thumbnail := range sm.servers[idx].ThumbnailChan {
+		// 		pubsub.TrackThumbnailPubSub.Publish(thumbnails.PubSubThumbnailPreffix+sm.servers[idx].ID, thumbnail)
+		// 	}
+		// }(i)
 	}
 
 	return nil

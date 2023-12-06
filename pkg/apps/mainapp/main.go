@@ -7,7 +7,6 @@ import (
 	"f1champshotlapsbot/pkg/apps/live"
 	"f1champshotlapsbot/pkg/apps/sessions"
 	"f1champshotlapsbot/pkg/menus"
-	"f1champshotlapsbot/pkg/pubsub"
 	"f1champshotlapsbot/pkg/servers"
 	"f1champshotlapsbot/pkg/settings"
 	"fmt"
@@ -44,10 +43,9 @@ func (m menuer) Menu() tgbotapi.ReplyKeyboardMarkup {
 type MainApp struct {
 	bot       *tgbotapi.BotAPI
 	accepters []apps.Accepter
-	pubsubMgr *pubsub.PubSub
 }
 
-func NewMainApp(ctx context.Context, bot *tgbotapi.BotAPI, domain string, ss []servers.Server, pubsubMgr *pubsub.PubSub, exitChan chan bool, refreshHotlapsTicker *time.Ticker, sm *settings.Manager) (*MainApp, error) {
+func NewMainApp(ctx context.Context, bot *tgbotapi.BotAPI, domain string, ss []servers.Server, exitChan chan bool, refreshHotlapsTicker *time.Ticker, sm *settings.Manager) (*MainApp, error) {
 	hotlapsAppMenu := menus.NewApplicationMenu(buttonHotlaps, appName, menuer{})
 	hotlapApp := hotlaps.NewHotlapsApp(ctx, bot, domain, hotlapsAppMenu, exitChan, refreshHotlapsTicker)
 
@@ -55,7 +53,7 @@ func NewMainApp(ctx context.Context, bot *tgbotapi.BotAPI, domain string, ss []s
 	sessionsApp := sessions.NewSessionsApp(ctx, bot, domain, sessionsAppMenu)
 
 	liveAppMenu := menus.NewApplicationMenu(buttonLive, appName, menuer{})
-	liveApp, err := live.NewLiveApp(ctx, bot, pubsubMgr, ss, liveAppMenu, sm)
+	liveApp, err := live.NewLiveApp(ctx, bot, ss, liveAppMenu, sm)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +63,6 @@ func NewMainApp(ctx context.Context, bot *tgbotapi.BotAPI, domain string, ss []s
 	return &MainApp{
 		bot:       bot,
 		accepters: accepters,
-		pubsubMgr: pubsubMgr,
 	}, nil
 }
 

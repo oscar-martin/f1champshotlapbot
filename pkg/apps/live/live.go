@@ -3,13 +3,12 @@ package live
 import (
 	"context"
 	"f1champshotlapsbot/pkg/apps"
-	"f1champshotlapsbot/pkg/caster"
 	"f1champshotlapsbot/pkg/menus"
+	"f1champshotlapsbot/pkg/model"
 	"f1champshotlapsbot/pkg/pubsub"
 	"f1champshotlapsbot/pkg/servers"
 	"f1champshotlapsbot/pkg/settings"
 	"fmt"
-	"log"
 	"sync"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -26,20 +25,18 @@ type LiveApp struct {
 	menuKeyboard               tgbotapi.ReplyKeyboardMarkup
 	accepters                  []apps.Accepter
 	servers                    []servers.Server
-	liveSessionInfoUpdateChans []<-chan string
-	liveSessionInfoDataCaster  caster.ChannelCaster[servers.LiveSessionInfoData]
+	liveSessionInfoUpdateChans []<-chan model.LiveSessionInfoData
 	mu                         sync.Mutex
 }
 
-func NewLiveApp(ctx context.Context, bot *tgbotapi.BotAPI, pubsubMgr *pubsub.PubSub, ss []servers.Server, appMenu menus.ApplicationMenu, sm *settings.Manager) (*LiveApp, error) {
-	liveSessionInfoUpdateChans := []<-chan string{}
+func NewLiveApp(ctx context.Context, bot *tgbotapi.BotAPI, ss []servers.Server, appMenu menus.ApplicationMenu, sm *settings.Manager) (*LiveApp, error) {
+	liveSessionInfoUpdateChans := []<-chan model.LiveSessionInfoData{}
 	for _, server := range ss {
-		liveSessionInfoUpdateChans = append(liveSessionInfoUpdateChans, pubsubMgr.Subscribe(servers.PubSubSessionInfoPreffix+server.ID))
+		liveSessionInfoUpdateChans = append(liveSessionInfoUpdateChans, pubsub.LiveSessionInfoDataPubSub.Subscribe(servers.PubSubSessionInfoPreffix+server.ID))
 	}
 	la := &LiveApp{
 		bot:                        bot,
 		appMenu:                    appMenu,
-		liveSessionInfoDataCaster:  caster.JSONChannelCaster[servers.LiveSessionInfoData]{},
 		liveSessionInfoUpdateChans: liveSessionInfoUpdateChans,
 		servers:                    ss,
 	}
@@ -47,7 +44,7 @@ func NewLiveApp(ctx context.Context, bot *tgbotapi.BotAPI, pubsubMgr *pubsub.Pub
 	la.accepters = []apps.Accepter{}
 	for _, server := range ss {
 		serverAppMenu := menus.NewApplicationMenu(server.StatusAndName(), liveAppName, la)
-		serverApp := NewServerApp(la.bot, serverAppMenu, pubsubMgr, server.ID, server.URL)
+		serverApp := NewServerApp(la.bot, serverAppMenu, server.ID, server.URL)
 		la.accepters = append(la.accepters, serverApp)
 	}
 
@@ -83,7 +80,9 @@ func (la *LiveApp) updateKeyboard() {
 	la.menuKeyboard = menuKeyboard
 }
 
-func (la *LiveApp) update(lsid servers.LiveSessionInfoData) {
+func (la *LiveApp) update(lsid model.LiveSessionInfoData) {
+	la.mu.Lock()
+	defer la.mu.Unlock()
 	for idx := range la.servers {
 		if la.servers[idx].ID == lsid.ServerID {
 			if lsid.SessionInfo.ServerName != "" {
@@ -96,16 +95,9 @@ func (la *LiveApp) update(lsid servers.LiveSessionInfoData) {
 	la.updateKeyboard()
 }
 
-func (la *LiveApp) updater(c <-chan string) {
-	for payload := range c {
-		lsid, err := la.liveSessionInfoDataCaster.From(payload)
-		if err != nil {
-			log.Printf("Error casting session info: %s\n", err.Error())
-			continue
-		}
-		la.mu.Lock()
+func (la *LiveApp) updater(c <-chan model.LiveSessionInfoData) {
+	for lsid := range c {
 		la.update(lsid)
-		la.mu.Unlock()
 	}
 }
 

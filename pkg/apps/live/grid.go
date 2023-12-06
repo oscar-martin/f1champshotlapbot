@@ -3,9 +3,9 @@ package live
 import (
 	"bytes"
 	"context"
-	"f1champshotlapsbot/pkg/caster"
 	"f1champshotlapsbot/pkg/helper"
 	"f1champshotlapsbot/pkg/menus"
+	"f1champshotlapsbot/pkg/model"
 	"f1champshotlapsbot/pkg/pubsub"
 	"f1champshotlapsbot/pkg/servers"
 	"fmt"
@@ -26,19 +26,17 @@ type GridApp struct {
 	bot                        *tgbotapi.BotAPI
 	appMenu                    menus.ApplicationMenu
 	serverID                   string
-	liveStandingData           servers.LiveStandingData
-	liveStandingDataUpdateChan <-chan string
-	liveStandingDataCaster     caster.ChannelCaster[servers.LiveStandingData]
+	liveStandingData           model.LiveStandingData
+	liveStandingDataUpdateChan <-chan model.LiveStandingData
 
-	liveSessionInfoData           servers.LiveSessionInfoData
-	liveSessionInfoDataUpdateChan <-chan string
-	liveSessionInfoDataCaster     caster.ChannelCaster[servers.LiveSessionInfoData]
+	liveSessionInfoData           model.LiveSessionInfoData
+	liveSessionInfoDataUpdateChan <-chan model.LiveSessionInfoData
 
 	mu           sync.Mutex
 	menuKeyboard tgbotapi.ReplyKeyboardMarkup
 }
 
-func NewGridApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, pubsubMgr *pubsub.PubSub, serverID string) *GridApp {
+func NewGridApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, serverID string) *GridApp {
 	menuKeyboard := tgbotapi.NewReplyKeyboard(
 		tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton(appMenu.ButtonBackTo()),
@@ -49,10 +47,8 @@ func NewGridApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, pubsubMgr *
 		bot:                           bot,
 		appMenu:                       appMenu,
 		serverID:                      serverID,
-		liveStandingDataCaster:        caster.JSONChannelCaster[servers.LiveStandingData]{},
-		liveStandingDataUpdateChan:    pubsubMgr.Subscribe(servers.PubSubDriversSessionPreffix + serverID),
-		liveSessionInfoDataCaster:     caster.JSONChannelCaster[servers.LiveSessionInfoData]{},
-		liveSessionInfoDataUpdateChan: pubsubMgr.Subscribe(servers.PubSubSessionInfoPreffix + serverID),
+		liveStandingDataUpdateChan:    pubsub.LiveStandingDataPubSub.Subscribe(servers.PubSubDriversSessionPreffix + serverID),
+		liveSessionInfoDataUpdateChan: pubsub.LiveSessionInfoDataPubSub.Subscribe(servers.PubSubSessionInfoPreffix + serverID),
 		menuKeyboard:                  menuKeyboard,
 	}
 
@@ -63,30 +59,18 @@ func NewGridApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, pubsubMgr *
 }
 
 func (ga *GridApp) liveStandingDataUpdater() {
-	for payload := range ga.liveStandingDataUpdateChan {
-		// fmt.Println("Updating DriverSessions")
-		dss, err := ga.liveStandingDataCaster.From(payload)
-		if err != nil {
-			log.Printf("Error casting DriverSessions: %s\n", err.Error())
-			continue
-		}
+	for dss := range ga.liveStandingDataUpdateChan {
 		ga.update(dss, ga.liveSessionInfoData)
 	}
 }
 
 func (ga *GridApp) liveSessionInfoDataUpdater() {
-	for payload := range ga.liveSessionInfoDataUpdateChan {
-		// fmt.Println("Updating SessionInfo")
-		lsi, err := ga.liveSessionInfoDataCaster.From(payload)
-		if err != nil {
-			log.Printf("Error casting SessionInfo: %s\n", err.Error())
-			continue
-		}
+	for lsi := range ga.liveSessionInfoDataUpdateChan {
 		ga.update(ga.liveStandingData, lsi)
 	}
 }
 
-func (ga *GridApp) update(lsd servers.LiveStandingData, lsi servers.LiveSessionInfoData) {
+func (ga *GridApp) update(lsd model.LiveStandingData, lsi model.LiveSessionInfoData) {
 	ga.mu.Lock()
 	defer ga.mu.Unlock()
 	ga.liveStandingData = lsd
@@ -143,7 +127,7 @@ func (ga *GridApp) handleSessionDataCallbackQuery(chatId int64, messageId *int, 
 	return ga.sendSessionData(chatId, messageId, ga.liveStandingData, infoType)
 }
 
-func (ga *GridApp) sendSessionData(chatId int64, messageId *int, driversSession servers.LiveStandingData, infoType string) error {
+func (ga *GridApp) sendSessionData(chatId int64, messageId *int, driversSession model.LiveStandingData, infoType string) error {
 	if len(driversSession.Drivers) > 0 {
 		var b bytes.Buffer
 		t := table.NewWriter()

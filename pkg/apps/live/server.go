@@ -3,9 +3,9 @@ package live
 import (
 	"context"
 	"f1champshotlapsbot/pkg/apps"
-	"f1champshotlapsbot/pkg/caster"
 	"f1champshotlapsbot/pkg/helper"
 	"f1champshotlapsbot/pkg/menus"
+	"f1champshotlapsbot/pkg/model"
 	"f1champshotlapsbot/pkg/pubsub"
 	"f1champshotlapsbot/pkg/servers"
 	"f1champshotlapsbot/pkg/thumbnails"
@@ -31,13 +31,13 @@ type ServerApp struct {
 	stintApp                      *StintApp
 	accepters                     []apps.Accepter
 	serverID                      string
-	liveSessionInfoData           servers.LiveSessionInfoData
-	liveSessionInfoDataUpdateChan <-chan string
-	liveSessionInfoDataCaster     caster.ChannelCaster[servers.LiveSessionInfoData]
-	trackThumbnailData            thumbnails.Thumbnail
-	trackThumbnailDataUpdateChan  <-chan string
-	trackThumbnailCaster          caster.ChannelCaster[thumbnails.Thumbnail]
-	mu                            sync.Mutex
+	liveSessionInfoData           model.LiveSessionInfoData
+	liveSessionInfoDataUpdateChan <-chan model.LiveSessionInfoData
+
+	trackThumbnailData           thumbnails.Thumbnail
+	trackThumbnailDataUpdateChan <-chan thumbnails.Thumbnail
+
+	mu sync.Mutex
 }
 
 func sanitizeServerName(name string) string {
@@ -47,25 +47,23 @@ func sanitizeServerName(name string) string {
 	return strings.TrimSpace(fixed)
 }
 
-func NewServerApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, pubsubMgr *pubsub.PubSub, serverID, serverURL string) *ServerApp {
+func NewServerApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, serverID, serverURL string) *ServerApp {
 	sa := &ServerApp{
 		bot:                           bot,
 		appMenu:                       appMenu,
 		serverID:                      serverID,
-		liveSessionInfoDataCaster:     caster.JSONChannelCaster[servers.LiveSessionInfoData]{},
-		liveSessionInfoDataUpdateChan: pubsubMgr.Subscribe(servers.PubSubSessionInfoPreffix + serverID),
-		trackThumbnailCaster:          caster.JSONChannelCaster[thumbnails.Thumbnail]{},
-		trackThumbnailDataUpdateChan:  pubsubMgr.Subscribe(thumbnails.PubSubThumbnailPreffix + serverID),
+		liveSessionInfoDataUpdateChan: pubsub.LiveSessionInfoDataPubSub.Subscribe(servers.PubSubSessionInfoPreffix + serverID),
+		trackThumbnailDataUpdateChan:  pubsub.TrackThumbnailPubSub.Subscribe(thumbnails.PubSubThumbnailPreffix + serverID),
 	}
 
 	go sa.liveSessionInfoUpdater()
 	go sa.trackThumbnailUpdater()
 
 	gridAppMenu := menus.NewApplicationMenu("", serverID, sa)
-	gridApp := NewGridApp(bot, gridAppMenu, pubsubMgr, serverID)
+	gridApp := NewGridApp(bot, gridAppMenu, serverID)
 
 	stintAppMenu := menus.NewApplicationMenu("", serverID, sa)
-	stintApp := NewStintApp(bot, stintAppMenu, pubsubMgr, serverID, serverURL)
+	stintApp := NewStintApp(bot, stintAppMenu, serverID, serverURL)
 
 	accepters := []apps.Accepter{gridApp, stintApp}
 
@@ -75,7 +73,9 @@ func NewServerApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, pubsubMgr
 	return sa
 }
 
-func (sa *ServerApp) update(lsid servers.LiveSessionInfoData, t thumbnails.Thumbnail) {
+func (sa *ServerApp) update(lsid model.LiveSessionInfoData, t thumbnails.Thumbnail) {
+	sa.mu.Lock()
+	defer sa.mu.Unlock()
 	stint := buttonStint + " " + lsid.ServerName
 	grid := buttonGrid + " " + lsid.ServerName
 	info := buttonInfo + " " + lsid.ServerName
@@ -96,30 +96,14 @@ func (sa *ServerApp) update(lsid servers.LiveSessionInfoData, t thumbnails.Thumb
 }
 
 func (sa *ServerApp) liveSessionInfoUpdater() {
-	for payload := range sa.liveSessionInfoDataUpdateChan {
-		// fmt.Println("Updating SessionInfo")
-		s, err := sa.liveSessionInfoDataCaster.From(payload)
-		if err != nil {
-			log.Printf("Error casting SessionInfo: %s\n", err.Error())
-			continue
-		}
-		sa.mu.Lock()
-		sa.update(s, sa.trackThumbnailData)
-		sa.mu.Unlock()
+	for si := range sa.liveSessionInfoDataUpdateChan {
+		sa.update(si, sa.trackThumbnailData)
 	}
 }
 
 func (sa *ServerApp) trackThumbnailUpdater() {
-	for payload := range sa.trackThumbnailDataUpdateChan {
-		// fmt.Println("Updating SessionInfo")
-		t, err := sa.trackThumbnailCaster.From(payload)
-		if err != nil {
-			log.Printf("Error casting thumbnail: %s\n", err.Error())
-			continue
-		}
-		sa.mu.Lock()
+	for t := range sa.trackThumbnailDataUpdateChan {
 		sa.update(sa.liveSessionInfoData, t)
-		sa.mu.Unlock()
 	}
 }
 

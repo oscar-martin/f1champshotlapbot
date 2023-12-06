@@ -1,6 +1,7 @@
 package servers
 
 import (
+	"f1champshotlapsbot/pkg/model"
 	"f1champshotlapsbot/pkg/thumbnails"
 	"fmt"
 	"sync"
@@ -44,10 +45,10 @@ type Server struct {
 	TopSpeedForDriver               map[string]map[int]float64
 	DriverToCarId                   map[string]string
 	SessionStarted                  ServerStarted
-	LiveSessionInfoDataChan         chan LiveSessionInfoData     `json:"-"`
-	LiveStandingHistoryChan         chan LiveStandingHistoryData `json:"-"`
-	LiveStandingChan                chan LiveStandingData        `json:"-"`
-	ThumbnailChan                   chan thumbnails.Thumbnail    `json:"-"`
+	LiveSessionInfoDataChan         chan model.LiveSessionInfoData     `json:"-"`
+	LiveStandingHistoryChan         chan model.LiveStandingHistoryData `json:"-"`
+	LiveStandingChan                chan model.LiveStandingData        `json:"-"`
+	ThumbnailChan                   chan thumbnails.Thumbnail          `json:"-"`
 }
 
 func NewServer(id, url string) Server {
@@ -91,15 +92,15 @@ func (s *Server) reset() {
 	s.TopSpeedForDriver = make(map[string]map[int]float64)
 	s.SessionStarted = ServerStarted{}
 	{
-		body := map[string][]StandingHistoryDriverData{}
+		body := map[string][]model.StandingHistoryDriverData{}
 		s.LiveStandingHistoryChan <- s.fromMessageToLiveStandingHistoryData(s.Name, s.ID, &body)
 	}
 	{
-		body := []StandingDriverData{}
+		body := []model.StandingDriverData{}
 		s.LiveStandingChan <- s.fromMessageToLiveStandingData(s.Name, s.ID, body)
 	}
 	{
-		body := SessionInfo{}
+		body := model.SessionInfo{}
 		s.LiveSessionInfoDataChan <- s.fromMessageToLiveSessionInfoData(s.Name, s.ID, &body)
 	}
 }

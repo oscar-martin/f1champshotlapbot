@@ -1,6 +1,7 @@
 package thumbnails
 
 import (
+	"context"
 	"encoding/json"
 	"f1champshotlapsbot/pkg/layout"
 	"fmt"
@@ -23,7 +24,7 @@ func init() {
 	}
 }
 
-type pngBuilder func(url, filePath string) error
+type pngBuilder func(ctx context.Context, url, filePath string) error
 
 type Thumbnail struct {
 	Id         string
@@ -31,28 +32,43 @@ type Thumbnail struct {
 	ServerUrl  string
 	Endpoint   string
 	pngBuilder pngBuilder
+	prefix     string
 }
 
-func BuildTrackThumbnail(url, id string) (Thumbnail, error) {
+func BuildTrackThumbnail(ctx context.Context, url, id string) (Thumbnail, error) {
 	th := Thumbnail{
 		Id:         id,
 		Endpoint:   "rest/race/track/%s/trackmap",
 		ServerUrl:  url,
 		pngBuilder: pngBuilderForTrack,
+		prefix:     "track_",
 	}
 
-	return th, th.build()
+	return th, th.build(ctx)
 }
 
-func BuildCarThumbnail(url, id string) (Thumbnail, error) {
+func BuildSmallCarThumbnail(ctx context.Context, url, id string) (Thumbnail, error) {
 	th := Thumbnail{
 		Id:         id,
 		Endpoint:   "rest/race/car/%s/image?type=IMAGE_SMALL",
 		ServerUrl:  url,
 		pngBuilder: pngBuilderForCar,
+		prefix:     "car_",
 	}
 
-	return th, th.build()
+	return th, th.build(ctx)
+}
+
+func BuildCarThumbnail(ctx context.Context, url, id string) (Thumbnail, error) {
+	th := Thumbnail{
+		Id:         id,
+		Endpoint:   "rest/race/car/%s/image",
+		ServerUrl:  url,
+		pngBuilder: pngBuilderForCar,
+		prefix:     "car_",
+	}
+
+	return th, th.build(ctx)
 }
 
 func (t Thumbnail) IsZero() bool {
@@ -67,16 +83,16 @@ func (t Thumbnail) requestUrl() string {
 	return fmt.Sprintf("%s/%s", t.ServerUrl, fmt.Sprintf(t.Endpoint, t.Id))
 }
 
-func (t *Thumbnail) build() error {
+func (t *Thumbnail) build(ctx context.Context) error {
 	if t.Id == "" {
 		return fmt.Errorf("thumbnail is not initialized")
 	}
 	filePath := t.buildFilePath()
 	if _, err := os.Stat(filePath); err == nil {
-		fmt.Printf("thumbnail %q already exists\n", t.Id)
+		fmt.Printf("thumbnail for %q already exists\n", t.Id)
 		t.FilePath = filePath
 	} else if os.IsNotExist(err) {
-		err := t.pngBuilder(t.requestUrl(), filePath)
+		err := t.pngBuilder(ctx, t.requestUrl(), filePath)
 		if err != nil {
 			log.Printf("Error building png: %s\n", err)
 			return err
@@ -98,15 +114,24 @@ func (t *Thumbnail) FileData() (tgbotapi.RequestFileData, error) {
 }
 
 func (t Thumbnail) buildFilePath() string {
-	return fmt.Sprintf("%s/%s.png", thumbnailsDir, t.Id)
+	return fmt.Sprintf("%s/%s%s.png", thumbnailsDir, t.prefix, t.Id)
 }
 
-func pngBuilderForTrack(url, filePath string) error {
-	response, err := http.Get(url)
+func pngBuilderForTrack(ctx context.Context, url, filePath string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	req = req.WithContext(ctx)
+
+	response, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}
 	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("error getting car image: %s (%s)", response.Status, url)
+	}
 
 	var layoutData layout.AIW
 	err = json.NewDecoder(response.Body).Decode(&layoutData)
@@ -121,8 +146,14 @@ func pngBuilderForTrack(url, filePath string) error {
 }
 
 // create a pngBuilder from a http call
-func pngBuilderForCar(url, filePath string) error {
-	response, err := http.Get(url)
+func pngBuilderForCar(ctx context.Context, url, filePath string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	req = req.WithContext(ctx)
+
+	response, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}

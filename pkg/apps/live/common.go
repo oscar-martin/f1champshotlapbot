@@ -29,4 +29,5 @@ const (
 	symbolUpdate   = "🔄"
 	symbolDiff     = "⏲️"
 	symbolOptimum  = "🚀"
+	symbolPhoto    = "📸"
 )

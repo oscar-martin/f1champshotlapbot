@@ -181,7 +181,7 @@ func (sa *StintApp) handleCarDataCallbackQuery(chatId int64, messageId *int, dri
 			carThChan := make(chan thumbnails.Thumbnail)
 			errChan := make(chan error)
 			go func() {
-				carTh, err := thumbnails.BuildCarThumbnail(sa.serverURL, driverData[0].CarId)
+				carTh, err := thumbnails.BuildCarThumbnail(ctx, sa.serverURL, driverData[0].CarId)
 				if err != nil {
 					errChan <- err
 					return
@@ -207,7 +207,14 @@ func (sa *StintApp) handleCarDataCallbackQuery(chatId int64, messageId *int, dri
 					_, err := sa.bot.Send(msg)
 					return err
 				}
+				text := fmt.Sprintf(`‣ Coche: %s
+‣ Clase: %s
+‣ Piloto: %s`,
+					driverData[0].VehicleName,
+					driverData[0].CarClass,
+					driverData[0].DriverName)
 				msg := tgbotapi.NewPhoto(chatId, rfd)
+				msg.Caption = text
 				_, err = sa.bot.Send(msg)
 				return err
 			}
@@ -304,7 +311,7 @@ func getStintInlineKeyboard(driver, serverID string) tgbotapi.InlineKeyboardMark
 			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardSectors+" "+symbolSectors, fmt.Sprintf("%s:%s:%s:%s", subcommandShowDrivers, serverID, inlineKeyboardSectors, driver)),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardCar+" "+symbolTeam, fmt.Sprintf("%s:%s:%s", subcommandShowCars, serverID, driver)),
+			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardCar+" "+symbolPhoto, fmt.Sprintf("%s:%s:%s", subcommandShowCars, serverID, driver)),
 		),
 	)
 }

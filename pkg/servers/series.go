@@ -1,6 +1,7 @@
 package servers
 
 import (
+	"context"
 	"encoding/json"
 	"f1champshotlapsbot/pkg/thumbnails"
 	"fmt"
@@ -99,10 +100,24 @@ func buildTrackThumbnail(serverUrl string) (thumbnails.Thumbnail, error) {
 		return t, err
 	}
 
-	th, err := thumbnails.BuildTrackThumbnail(serverUrl, selectedSessionData.Track.ID)
-	if err != nil {
-		log.Printf("Error prefetching track thumbnail: %s\n", err)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	thChan := make(chan thumbnails.Thumbnail)
+	errChan := make(chan error)
+	go func() {
+		th, err := thumbnails.BuildTrackThumbnail(ctx, serverUrl, selectedSessionData.Track.ID)
+		if err != nil {
+			errChan <- err
+			return
+		}
+		thChan <- th
+	}()
+	select {
+	case <-ctx.Done():
+		return t, ctx.Err()
+	case err := <-errChan:
 		return t, err
+	case th := <-thChan:
+		return th, nil
 	}
-	return th, nil
 }

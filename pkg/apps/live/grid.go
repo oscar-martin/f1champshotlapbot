@@ -7,7 +7,6 @@ import (
 	"f1champshotlapsbot/pkg/menus"
 	"f1champshotlapsbot/pkg/model"
 	"f1champshotlapsbot/pkg/pubsub"
-	"f1champshotlapsbot/pkg/servers"
 	"fmt"
 	"log"
 	"strings"
@@ -32,24 +31,16 @@ type GridApp struct {
 	liveSessionInfoData           model.LiveSessionInfoData
 	liveSessionInfoDataUpdateChan <-chan model.LiveSessionInfoData
 
-	mu           sync.Mutex
-	menuKeyboard tgbotapi.ReplyKeyboardMarkup
+	mu sync.Mutex
 }
 
 func NewGridApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, serverID string) *GridApp {
-	menuKeyboard := tgbotapi.NewReplyKeyboard(
-		tgbotapi.NewKeyboardButtonRow(
-			tgbotapi.NewKeyboardButton(appMenu.ButtonBackTo()),
-		),
-	)
-
 	ga := &GridApp{
 		bot:                           bot,
 		appMenu:                       appMenu,
 		serverID:                      serverID,
-		liveStandingDataUpdateChan:    pubsub.LiveStandingDataPubSub.Subscribe(servers.PubSubDriversSessionPreffix + serverID),
-		liveSessionInfoDataUpdateChan: pubsub.LiveSessionInfoDataPubSub.Subscribe(servers.PubSubSessionInfoPreffix + serverID),
-		menuKeyboard:                  menuKeyboard,
+		liveStandingDataUpdateChan:    pubsub.LiveStandingDataPubSub.Subscribe(pubsub.PubSubDriversSessionPreffix + serverID),
+		liveSessionInfoDataUpdateChan: pubsub.LiveSessionInfoDataPubSub.Subscribe(pubsub.PubSubSessionInfoPreffix + serverID),
 	}
 
 	go ga.liveStandingDataUpdater()
@@ -291,7 +282,7 @@ func (ga *GridApp) sendSessionData(chatId int64, messageId *int, driversSession 
 		}
 		t.Render()
 
-		keyboard := getInlineKeyboard(driversSession.ServerID)
+		keyboard := getGridInlineKeyboard(driversSession.ServerID, fmt.Sprintf("%s%s/live", ga.liveSessionInfoData.SessionInfo.LiveMapDomain, ga.liveSessionInfoData.SessionInfo.LiveMapPath))
 		var cfg tgbotapi.Chattable
 		remainingTime := helper.SecondsToHoursAndMinutes(ga.liveSessionInfoData.SessionInfo.EndEventTime - ga.liveSessionInfoData.SessionInfo.CurrentEventTime)
 		text := fmt.Sprintf("```\nTiempo restante: %s\nServer: %q\n\n%s```", remainingTime, driversSession.ServerName, b.String())
@@ -316,7 +307,7 @@ func (ga *GridApp) sendSessionData(chatId int64, messageId *int, driversSession 
 	}
 }
 
-func getInlineKeyboard(serverID string) tgbotapi.InlineKeyboardMarkup {
+func getGridInlineKeyboard(serverID, liveMapUrl string) tgbotapi.InlineKeyboardMarkup {
 	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardBestLap+" "+symbolTimes, fmt.Sprintf("%s:%s:%s", subcommandShowLiveTiming, serverID, inlineKeyboardBestLap)),
@@ -334,6 +325,7 @@ func getInlineKeyboard(serverID string) tgbotapi.InlineKeyboardMarkup {
 			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardStatus, fmt.Sprintf("%s:%s:%s", subcommandShowLiveTiming, serverID, inlineKeyboardStatus)),
 			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardInfo, fmt.Sprintf("%s:%s:%s", subcommandShowLiveTiming, serverID, inlineKeyboardInfo)),
 			tgbotapi.NewInlineKeyboardButtonData(inlineKeyboardDiff, fmt.Sprintf("%s:%s:%s", subcommandShowLiveTiming, serverID, inlineKeyboardDiff)),
+			tgbotapi.NewInlineKeyboardButtonURL(inlineKeyboardLiveMap, liveMapUrl),
 		),
 	)
 }

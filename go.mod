@@ -28,6 +28,7 @@ require (
 	github.com/go-pdf/fpdf v0.8.0 // indirect
 	github.com/go-text/typesetting v0.0.0-20230803102845-24e03d8b5372 // indirect
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
+	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/jedib0t/go-pretty v4.3.0+incompatible // indirect
 	github.com/llgcode/draw2d v0.0.0-20231022063514-1acb54133d2a // indirect
 	github.com/mattn/go-runewidth v0.0.13 // indirect

@@ -1,5 +1,7 @@
 package model
 
+import "fmt"
+
 type LiveStandingData struct {
 	ServerName string               `json:"serverName"`
 	ServerID   string               `json:"serverId"`
@@ -100,10 +102,11 @@ type StandingDriverData struct {
 }
 
 type CarPosition struct {
-	Type int     `json:"type"`
-	Z    float64 `json:"z"`
-	Y    float64 `json:"y"`
-	X    float64 `json:"x"`
+	Type            int     `json:"type"`
+	Z               float64 `json:"z"`
+	Y               float64 `json:"y"`
+	X               float64 `json:"x"`
+	DriverShortName string  `json:"dri,omitempty"`
 }
 
 type CarVelocity struct {
@@ -139,7 +142,9 @@ type RaceCompletion struct {
 
 type SessionInfo struct {
 	WebSocketRunning   bool           `json:"wsRunning,omitempty"`
-	RecevingData       bool           `json:"recevingData,omitempty"`
+	ReceivingData      bool           `json:"receivingData,omitempty"`
+	LiveMapDomain      string         `json:"liveMapDomain,omitempty"`
+	LiveMapPath        string         `json:"liveMapPath,omitempty"`
 	TrackName          string         `json:"trackName"`
 	Session            string         `json:"session"`
 	CurrentEventTime   float64        `json:"currentEventTime"`
@@ -170,4 +175,72 @@ type SessionInfo struct {
 	ServerName         string         `json:"serverName"`
 	StartEventTime     float64        `json:"startEventTime"`
 	RaceCompletion     RaceCompletion `json:"raceCompletion"`
+}
+
+type ServerStarted struct {
+	ServerName  string  `json:"serverName"`
+	ServerID    string  `json:"serverId"`
+	SessionType string  `json:"sessionType"`
+	TrackName   string  `json:"trackName"`
+	EventTime   float64 `json:"eventTime"`
+}
+
+func (ss ServerStarted) String() string {
+	return fmt.Sprintf("  ▸ Servidor: %s\n  ▸ Sesión: %s\n  ▸ Circuito: %s", ss.ServerName, ss.SessionType, ss.TrackName)
+}
+
+// Series struct represents the "series" part of the JSON.
+type Series struct {
+	ShortName   string `json:"shortName"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Disabled    bool   `json:"disabled"`
+	Signature   string `json:"signature"`
+	Version     string `json:"version"`
+}
+
+// Track struct represents the "track" part of the JSON.
+type Track struct {
+	ID                    string                 `json:"id"`
+	ShortName             string                 `json:"shortName"`
+	Name                  string                 `json:"name"`
+	SceneDesc             string                 `json:"sceneDesc"`
+	Year                  string                 `json:"year"`
+	Layout                string                 `json:"layout"`
+	Description           string                 `json:"description"`
+	Length                string                 `json:"length"`
+	Type                  string                 `json:"type"`
+	Localizations         map[string]interface{} `json:"localizations"`
+	CategoryLocalizations map[string]interface{} `json:"categoryLocalizations"`
+	PremID                int                    `json:"premId"`
+	Owned                 bool                   `json:"owned"`
+	Image                 string                 `json:"image"`
+	Thumbnail             string                 `json:"thumbnail"`
+}
+
+// Car struct represents the "car" part of the JSON.
+type Car struct {
+	ID                    string                 `json:"id"`
+	Name                  string                 `json:"name"`
+	Description           string                 `json:"description"`
+	BHP                   string                 `json:"bhp"`
+	UsedIn                string                 `json:"usedIn"`
+	Configuration         string                 `json:"configuration"`
+	FullPathTree          string                 `json:"fullPathTree"`
+	VehFile               string                 `json:"vehFile"`
+	Engine                string                 `json:"engine"`
+	Manufacturer          string                 `json:"manufacturer"`
+	Localizations         map[string]interface{} `json:"localizations"`
+	CategoryLocalizations map[string]interface{} `json:"categoryLocalizations"`
+	PremID                int                    `json:"premId"`
+	Owned                 bool                   `json:"owned"`
+	Image                 string                 `json:"image"`
+	Thumbnail             string                 `json:"thumbnail"`
+}
+
+// Data struct represents the entire JSON structure.
+type SelectedSessionData struct {
+	Series Series `json:"series"`
+	Track  Track  `json:"track"`
+	Car    Car    `json:"car"`
 }

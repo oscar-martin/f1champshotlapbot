@@ -32,7 +32,7 @@ type LiveApp struct {
 func NewLiveApp(ctx context.Context, bot *tgbotapi.BotAPI, ss []servers.Server, appMenu menus.ApplicationMenu, sm *settings.Manager) (*LiveApp, error) {
 	liveSessionInfoUpdateChans := []<-chan model.LiveSessionInfoData{}
 	for _, server := range ss {
-		liveSessionInfoUpdateChans = append(liveSessionInfoUpdateChans, pubsub.LiveSessionInfoDataPubSub.Subscribe(servers.PubSubSessionInfoPreffix+server.ID))
+		liveSessionInfoUpdateChans = append(liveSessionInfoUpdateChans, pubsub.LiveSessionInfoDataPubSub.Subscribe(pubsub.PubSubSessionInfoPreffix+server.ID))
 	}
 	la := &LiveApp{
 		bot:                        bot,
@@ -89,7 +89,7 @@ func (la *LiveApp) update(lsid model.LiveSessionInfoData) {
 				la.servers[idx].Name = lsid.SessionInfo.ServerName
 			}
 			la.servers[idx].WebSocketRunning = lsid.SessionInfo.WebSocketRunning
-			la.servers[idx].RecevingData = lsid.SessionInfo.RecevingData
+			la.servers[idx].ReceivingData = lsid.SessionInfo.ReceivingData
 		}
 	}
 	la.updateKeyboard()

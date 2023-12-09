@@ -12,7 +12,6 @@ import (
 
 	"github.com/llgcode/draw2d"
 	"github.com/llgcode/draw2d/draw2dimg"
-	"github.com/llgcode/draw2d/draw2dkit"
 )
 
 type Data struct {
@@ -29,7 +28,7 @@ func main() {
 	if len(os.Args) >= 2 {
 		track = os.Args[1]
 	}
-	jsonFile, err := os.Open(fmt.Sprintf("./track.%s.json", track))
+	jsonFile, _ := os.Open(fmt.Sprintf("./track.%s.json", track))
 	carJsonFile, err := os.Open(fmt.Sprintf("./car.%s.json", track))
 	carEnabled := true
 	if err != nil {
@@ -48,10 +47,6 @@ func main() {
 
 	var carAiw AIW
 	if carEnabled {
-		err := json.Unmarshal(bytes, &carAiw)
-		if err != nil {
-			panic(err)
-		}
 		bytes, err := io.ReadAll(carJsonFile)
 		if err != nil {
 			panic(err)
@@ -128,31 +123,33 @@ func drawImage(trackAiw, carAiw AIW, minX, maxX, minY, maxY, minZ, maxZ float64,
 		height = minX + maxX
 		width = minZ + maxZ
 	}
+	rect := image.Rect(0, 0, int(width), int(height))
 
 	dest := image.NewRGBA(image.Rect(0, 0, int(width), int(height)))
 	gc := draw2dimg.NewGraphicContext(dest)
+	// dest := draw2dsvg.NewSvg()
+	// gc := draw2dsvg.NewGraphicContext(dest)
 
-	gc.SetFillColor(image.White)
-	draw2dkit.RoundedRectangle(gc, 0, 0, width, height, 0, 0)
-	gc.FillStroke()
+	// gc.SetFillColor(image.White)
+	// draw2dkit.RoundedRectangle(gc, 0, 0, width, height, 0, 0)
+	// gc.FillStroke()
 
 	// Set some properties
 	// gc.SetFillColor(color.RGBA{0x44, 0xff, 0x44, 0xff})
 	// gc.SetStrokeColor(color.RGBA{0xff, 0xff, 0xff, 0xff})
 
-	// Draw a closed shape
-	// for i := 100; i >= 2; i-- {
+	// for i := maxType; i >= 100; i-- {
 	// 	aiwFiltered := AIW{}
-	// 	for _, data := range aiw {
+	// 	for _, data := range trackAiw {
 	// 		if data.Type == i {
 	// 			aiwFiltered = append(aiwFiltered, data)
 	// 		}
 	// 	}
 
-	// 	drawType(gc, aiwFiltered, minX, maxX, minY, maxY, minZ, maxZ, i, rotate, width, height, dest.Rect)
+	// 	drawType(gc, aiwFiltered, minX, maxX, minY, maxY, minZ, maxZ, i, rotate, width, height, rect)
 	// }
 
-	for i := maxType; i >= 100; i-- {
+	for i := 2; i >= 0; i-- {
 		aiwFiltered := AIW{}
 		for _, data := range trackAiw {
 			if data.Type == i {
@@ -160,24 +157,14 @@ func drawImage(trackAiw, carAiw AIW, minX, maxX, minY, maxY, minZ, maxZ float64,
 			}
 		}
 
-		drawType(gc, aiwFiltered, minX, maxX, minY, maxY, minZ, maxZ, i, rotate, width, height, dest.Rect)
+		drawType(gc, aiwFiltered, minX, maxX, minY, maxY, minZ, maxZ, i, rotate, width, height, rect)
 	}
 
-	for i := 1; i >= 0; i-- {
-		aiwFiltered := AIW{}
-		for _, data := range trackAiw {
-			if data.Type == i {
-				aiwFiltered = append(aiwFiltered, data)
-			}
-		}
-
-		drawType(gc, aiwFiltered, minX, maxX, minY, maxY, minZ, maxZ, i, rotate, width, height, dest.Rect)
-	}
-
-	drawType(gc, carAiw, minX, maxX, minY, maxY, minZ, maxZ, -1, rotate, width, height, dest.Rect)
+	// drawType(gc, carAiw, minX, maxX, minY, maxY, minZ, maxZ, -1, rotate, width, height, rect)
 
 	// Save to file
 	draw2dimg.SaveToPngFile("hello.png", dest)
+	// draw2dsvg.SaveToSvgFile("hello.svg", dest)
 }
 
 func drawType(gc draw2d.GraphicContext, aiw AIW, minX, maxX, minY, maxY, minZ, maxZ float64, t int, rotate bool, width, height float64, rect image.Rectangle) {
@@ -191,6 +178,7 @@ func drawType(gc draw2d.GraphicContext, aiw AIW, minX, maxX, minY, maxY, minZ, m
 		gc.SetLineWidth(3)
 	} else {
 		gc.SetStrokeColor(color.RGBA{0x88, 0x88, 0x88, 0xff})
+		// gc.SetStrokeColor(color.RGBA{0xFF, 0x00, 0x00, 0xff})
 		gc.SetLineWidth(12)
 	}
 	initX, initZ := 0.0, 0.0
@@ -218,6 +206,12 @@ func drawType(gc draw2d.GraphicContext, aiw AIW, minX, maxX, minY, maxY, minZ, m
 		f := width / height
 		gc.Translate(0, -f*float64(rect.Max.Y))
 	}
+	// points := gc.GetPath().Points
+	// m := gc.GetMatrixTransform()
+	// m.Transform(points)
+	// for i := 0; i < len(points); i = i + 2 {
+	// 	fmt.Printf(`{"x": %f, "y": %f, "z": %f, "type": %d},`, points[i], 0.0, points[i+1], t)
+	// }
 
 	gc.Stroke()
 	gc.Restore()

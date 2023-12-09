@@ -2,7 +2,8 @@ package notification
 
 import (
 	"context"
-	"f1champshotlapsbot/pkg/servers"
+	"f1champshotlapsbot/pkg/model"
+	"f1champshotlapsbot/pkg/pubsub"
 	"f1champshotlapsbot/pkg/settings"
 	"log"
 	"strconv"
@@ -25,27 +26,26 @@ type Lister interface {
 }
 
 type Manager struct {
-	ctx               context.Context
-	lister            Lister
-	bot               *tgbotapi.BotAPI
-	newSessionStarted <-chan servers.ServerStarted
+	ctx    context.Context
+	lister Lister
+	bot    *tgbotapi.BotAPI
 }
 
-func NewManager(ctx context.Context, bot *tgbotapi.BotAPI, lister Lister, newSessionStarted <-chan servers.ServerStarted) *Manager {
+func NewManager(ctx context.Context, bot *tgbotapi.BotAPI, lister Lister) *Manager {
 	return &Manager{
-		ctx:               ctx,
-		bot:               bot,
-		lister:            lister,
-		newSessionStarted: newSessionStarted,
+		ctx:    ctx,
+		bot:    bot,
+		lister: lister,
 	}
 }
 
 func (m *Manager) Start(exitChan <-chan bool) {
+	startedChan := pubsub.FirstDriverEnteredPubSub.Subscribe(pubsub.PubSubFirstDriverEnteredPreffix)
 	for {
 		select {
 		case <-exitChan:
 			return
-		case newSession := <-m.newSessionStarted:
+		case newSession := <-startedChan:
 			sessionType := strings.ToLower(newSession.SessionType)
 			if isSessionToBeNotified(sessionType) {
 				log.Printf("Session to be notified started: %s -> %s\n", newSession.ServerName, newSession.SessionType)
@@ -66,7 +66,7 @@ func (m *Manager) Start(exitChan <-chan bool) {
 	}
 }
 
-func (m *Manager) handleNotification(newSession servers.ServerStarted, sessionType string) {
+func (m *Manager) handleNotification(newSession model.ServerStarted, sessionType string) {
 	receipients, err := m.lister.ListUsersForSessionStarted(sessionType)
 	log.Printf("Sending notification for %s -> %s to %d telegram users\n", newSession.ServerName, sessionType, len(receipients))
 	if err != nil {
@@ -79,7 +79,7 @@ func (m *Manager) handleNotification(newSession servers.ServerStarted, sessionTy
 	}
 }
 
-func (m *Manager) sendNotification(tusers []settings.TelegramUser, newSession servers.ServerStarted) error {
+func (m *Manager) sendNotification(tusers []settings.TelegramUser, newSession model.ServerStarted) error {
 	if len(tusers) == 0 {
 		return nil
 	}

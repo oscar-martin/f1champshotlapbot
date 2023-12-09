@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Download and Display SVG</title>
+</head>
+<body>
+
+  <div id="svgContainer"></div>
+
+  <script>
+    // URL of the SVG file on the web server
+    const svgUrl = 'http://localhost:8080/track/imola.svg';
+
+    // Function to download and display the SVG
+    async function downloadAndDisplaySVG(url, containerId) {
+      try {
+        // Fetch the SVG file
+        const response = await fetch(url);
+
+        if (!response.ok) {
+          throw new Error(`Failed to fetch SVG: ${response.statusText}`);
+        }
+
+        // Get the SVG content as text
+        const svgText = await response.text();
+
+        // Insert the SVG into the specified container
+        const container = document.getElementById(containerId);
+        container.innerHTML = svgText;
+      } catch (error) {
+        console.error(error.message);
+      }
+    }
+
+    // Call the function to download and display the SVG
+    downloadAndDisplaySVG(svgUrl, 'svgContainer');
+  </script>
+
+</body>
+</html>

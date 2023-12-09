@@ -3,8 +3,8 @@ package servers
 import (
 	"context"
 	"encoding/json"
+	"f1champshotlapsbot/pkg/helper"
 	"f1champshotlapsbot/pkg/model"
-	"fmt"
 	"log"
 	"math"
 	"net/url"
@@ -26,19 +26,7 @@ type Message struct {
 	Body        any    `json:"body,omitempty"`
 }
 
-type ServerStarted struct {
-	ServerName  string  `json:"serverName"`
-	ServerID    string  `json:"serverId"`
-	SessionType string  `json:"sessionType"`
-	TrackName   string  `json:"trackName"`
-	EventTime   float64 `json:"eventTime"`
-}
-
-func (ss ServerStarted) String() string {
-	return fmt.Sprintf("  ▸ Servidor: %s\n  ▸ Sesión: %s\n  ▸ Circuito: %s", ss.ServerName, ss.SessionType, ss.TrackName)
-}
-
-func (s *Server) WebSocketReader(ctx context.Context, newSessionChannel chan<- ServerStarted) error {
+func (s *Server) WebSocketReader(ctx context.Context) error {
 	if s.WebSocketRunning {
 		return nil
 	}
@@ -73,7 +61,7 @@ func (s *Server) WebSocketReader(ctx context.Context, newSessionChannel chan<- S
 	doneErr := make(chan error)
 
 	messageChan := make(chan Message)
-	go s.dispatchMessage(ctx, messageChan, doneErr, newSessionChannel)
+	go s.dispatchMessage(ctx, messageChan, doneErr)
 
 	go func() {
 		defer close(doneErr)
@@ -91,7 +79,7 @@ func (s *Server) WebSocketReader(ctx context.Context, newSessionChannel chan<- S
 	return <-doneErr
 }
 
-func (s *Server) dispatchMessage(ctx context.Context, messageChan <-chan Message, doneChan <-chan error, newSessionChannel chan<- ServerStarted) {
+func (s *Server) dispatchMessage(ctx context.Context, messageChan <-chan Message, doneChan <-chan error) {
 	timeoutTime := 5 * time.Second
 	timeout := time.After(timeoutTime)
 
@@ -105,10 +93,10 @@ func (s *Server) dispatchMessage(ctx context.Context, messageChan <-chan Message
 			timeout = time.After(timeoutTime)
 		case m := <-messageChan:
 			timeout = time.After(timeoutTime)
-			if !s.RecevingData {
+			if !s.ReceivingData {
 				s.StartSessionPendingNotification = true
 			}
-			s.RecevingData = true
+			s.ReceivingData = true
 			if m.MessageType == mtStandingHistory {
 				shdd := map[string][]model.StandingHistoryDriverData{}
 				jsonData, err := json.Marshal(m.Body)
@@ -141,12 +129,15 @@ func (s *Server) dispatchMessage(ctx context.Context, messageChan <-chan Message
 					s.StartSessionPendingNotification = false
 					// only send the notification once at least one player comes in
 					// otherwise, it's probably a session that was already running when the bot started
-					log.Printf("Signaling serverStarted subscribers for Server %s started: %s\n", s.Name, s.SessionStarted.SessionType)
-					newSessionChannel <- s.SessionStarted
+					log.Printf("Signaling First Driver entered in server %s. Session: %s\n", s.Name, s.SessionStarted.SessionType)
+					s.FirstDriverEnteredChan <- s.SessionStarted
 				}
 
 				// fmt.Printf("!!!!!!updating live timing!!!!!! %d\n", len(body))
-				s.LiveStandingChan <- s.fromMessageToLiveStandingData(s.Name, s.ID, sdd)
+				lsd, cp := s.fromMessageToLiveStandingData(s.Name, s.ID, sdd)
+				s.LiveStandingChan <- lsd
+				s.CarsPositionChan <- cp
+
 			} else if m.MessageType == mtSessionInfo {
 				si := model.SessionInfo{}
 				jsonData, err := json.Marshal(m.Body)
@@ -161,18 +152,14 @@ func (s *Server) dispatchMessage(ctx context.Context, messageChan <-chan Message
 				}
 				if s.SessionStarted.ServerID == "" {
 					log.Printf("Server %s started receiving data for session: %s\n", s.Name, si.Session)
-					s.SessionStarted = ServerStarted{
+					ss := model.ServerStarted{
 						ServerName:  s.Name,
 						ServerID:    s.ID,
 						SessionType: si.Session,
 						TrackName:   si.TrackName,
 						EventTime:   si.CurrentEventTime,
 					}
-					go func() {
-						trackThumbnail := buildCurrentSessionTrackThumbnail(s.URL)
-						log.Printf("Built track thumbnail: %s\n", trackThumbnail.String())
-						s.ThumbnailChan <- trackThumbnail
-					}()
+					s.ServerStartedChan <- ss
 				}
 
 				// fmt.Print("!!!!!!updating sessionInfo!!!!!!\n")
@@ -299,12 +286,19 @@ func (s *Server) fromMessageToLiveStandingHistoryData(serverName, serverID strin
 	}
 }
 
-func (s *Server) fromMessageToLiveStandingData(serverName, serverID string, data []model.StandingDriverData) model.LiveStandingData {
+func (s *Server) fromMessageToLiveStandingData(serverName, serverID string, data []model.StandingDriverData) (model.LiveStandingData, []model.CarPosition) {
+	carsPosition := []model.CarPosition{}
 	sort.Slice(data, func(i, j int) bool {
 		return data[i].Position < data[j].Position
 	})
 
 	for i := range data {
+		// update car position
+		{
+			cp := data[i].CarPosition
+			cp.DriverShortName = helper.GetDriverCodeName(data[i].DriverName)
+			carsPosition = append(carsPosition, cp)
+		}
 		// update topSpeed
 		{
 			topSpeedPerLaps, found := s.TopSpeedForDriver[data[i].DriverName]
@@ -357,12 +351,14 @@ func (s *Server) fromMessageToLiveStandingData(serverName, serverID string, data
 		ServerName: serverName,
 		ServerID:   serverID,
 		Drivers:    data,
-	}
+	}, carsPosition
 }
 
 func (s *Server) fromMessageToLiveSessionInfoData(serverName, serverID string, data *model.SessionInfo) model.LiveSessionInfoData {
 	data.WebSocketRunning = s.WebSocketRunning
-	data.RecevingData = s.RecevingData
+	data.ReceivingData = s.ReceivingData
+	data.LiveMapPath = s.LiveMapPath
+	data.LiveMapDomain = s.LiveMapDomain
 	if data.ServerName == "-none-" {
 		data.ServerName = serverID
 	}

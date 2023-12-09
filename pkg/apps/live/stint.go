@@ -7,8 +7,7 @@ import (
 	"f1champshotlapsbot/pkg/menus"
 	"f1champshotlapsbot/pkg/model"
 	"f1champshotlapsbot/pkg/pubsub"
-	"f1champshotlapsbot/pkg/servers"
-	"f1champshotlapsbot/pkg/thumbnails"
+	"f1champshotlapsbot/pkg/resources"
 	"fmt"
 	"log"
 	"strings"
@@ -36,25 +35,17 @@ type StintApp struct {
 	liveSessionInfoData           model.LiveSessionInfoData
 	liveSessionInfoDataUpdateChan <-chan model.LiveSessionInfoData
 
-	mu           sync.Mutex
-	menuKeyboard tgbotapi.ReplyKeyboardMarkup
+	mu sync.Mutex
 }
 
 func NewStintApp(bot *tgbotapi.BotAPI, appMenu menus.ApplicationMenu, serverID, serverURL string) *StintApp {
-	menuKeyboard := tgbotapi.NewReplyKeyboard(
-		tgbotapi.NewKeyboardButtonRow(
-			tgbotapi.NewKeyboardButton(appMenu.ButtonBackTo()),
-		),
-	)
-
 	sa := &StintApp{
 		bot:                               bot,
 		appMenu:                           appMenu,
 		serverID:                          serverID,
 		serverURL:                         serverURL,
-		liveStandingHistoryDataUpdateChan: pubsub.LiveStandingHistoryPubSub.Subscribe(servers.PubSubStintDataPreffix + serverID),
-		liveSessionInfoDataUpdateChan:     pubsub.LiveSessionInfoDataPubSub.Subscribe(servers.PubSubSessionInfoPreffix + serverID),
-		menuKeyboard:                      menuKeyboard,
+		liveStandingHistoryDataUpdateChan: pubsub.LiveStandingHistoryPubSub.Subscribe(pubsub.PubSubStintDataPreffix + serverID),
+		liveSessionInfoDataUpdateChan:     pubsub.LiveSessionInfoDataPubSub.Subscribe(pubsub.PubSubSessionInfoPreffix + serverID),
 	}
 
 	go sa.liveStandingHistoryDataUpdater()
@@ -164,10 +155,10 @@ func (sa *StintApp) handleCarDataCallbackQuery(chatId int64, messageId *int, dri
 		if driverData[0].CarId != "" {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			carThChan := make(chan thumbnails.Thumbnail)
+			carThChan := make(chan resources.Resource)
 			errChan := make(chan error)
 			go func() {
-				carTh, err := thumbnails.BuildCarThumbnail(ctx, sa.serverURL, driverData[0].CarId)
+				carTh, err := resources.BuildCarThumbnail(ctx, sa.serverURL, driverData[0].CarId)
 				if err != nil {
 					errChan <- err
 					return
@@ -186,22 +177,16 @@ func (sa *StintApp) handleCarDataCallbackQuery(chatId int64, messageId *int, dri
 				_, err = sa.bot.Send(msg)
 				return err
 			case carTh := <-carThChan:
-				rfd, err := carTh.FileData()
-				if err != nil {
-					message := fmt.Sprintf("No se pudo leer la imagen del coche de %s", driver)
-					msg := tgbotapi.NewMessage(chatId, message)
-					_, err := sa.bot.Send(msg)
-					return err
-				}
+				filePath := carTh.FilePath()
 				text := fmt.Sprintf(`‣ Coche: %s
 ‣ Clase: %s
 ‣ Piloto: %s`,
 					driverData[0].VehicleName,
 					driverData[0].CarClass,
 					driverData[0].DriverName)
-				msg := tgbotapi.NewPhoto(chatId, rfd)
+				msg := tgbotapi.NewPhoto(chatId, tgbotapi.FilePath(filePath))
 				msg.Caption = text
-				_, err = sa.bot.Send(msg)
+				_, err := sa.bot.Send(msg)
 				return err
 			}
 		} else {

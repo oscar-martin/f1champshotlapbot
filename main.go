@@ -8,13 +8,12 @@ import (
 	"f1champshotlapsbot/pkg/notification"
 	"f1champshotlapsbot/pkg/servers"
 	"f1champshotlapsbot/pkg/settings"
+	"f1champshotlapsbot/pkg/webserver"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
-	"runtime"
-	"runtime/pprof"
 	"strings"
 	"syscall"
 	"time"
@@ -29,31 +28,37 @@ const (
 	EnvHotlapsDomain = "API_DOMAIN"
 	// format: <server_id>,<server_url>;<server_id>,<server_url>;...
 	// format example: "ServerID1,http://localhost:10001;ServerID2,http://localhost:10002;ServerID3,http://localhost:10003"
-	EnvServers = "RF2_SERVERS"
+	EnvServers       = "RF2_SERVERS"
+	EnvLiveMapDomain = "LIVEMAP_DOMAIN"
 )
 
 var (
-	domain = ""
-	bot    *tgbotapi.BotAPI
-	app    apps.Accepter
+	domain        = ""
+	liveMapDomain = ""
+	bot           *tgbotapi.BotAPI
+	app           apps.Accepter
 )
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to `file`")
 var memprofile = flag.String("memprofile", "", "write memory profile to `file`")
 
 func main() {
-	flag.Parse()
-	if *cpuprofile != "" {
-		f, err := os.Create(*cpuprofile)
-		if err != nil {
-			log.Fatal("could not create CPU profile: ", err)
-		}
-		defer f.Close() // error handling omitted for example
-		if err := pprof.StartCPUProfile(f); err != nil {
-			log.Fatal("could not start CPU profile: ", err)
-		}
-		defer pprof.StopCPUProfile()
-	}
+	// flag.Parse()
+	// if *cpuprofile != "" {
+	// 	f, err := os.Create(*cpuprofile)
+	// 	if err != nil {
+	// 		log.Fatal("could not create CPU profile: ", err)
+	// 	}
+	// 	defer f.Close() // error handling omitted for example
+	// 	if err := pprof.StartCPUProfile(f); err != nil {
+	// 		log.Fatal("could not start CPU profile: ", err)
+	// 	}
+	// 	defer pprof.StopCPUProfile()
+	// }
+
+	// go func() {
+	// 	_ = http.ListenAndServe("0.0.0.0:8081", nil)
+	// }()
 
 	var err error
 	// get token from env
@@ -66,6 +71,12 @@ func main() {
 		log.Fatalf("%s is not set", EnvHotlapsDomain)
 	}
 	domain = strings.TrimRight(domain, "/")
+
+	liveMapDomain = os.Getenv(EnvLiveMapDomain)
+	if liveMapDomain == "" {
+		log.Fatalf("%s is not set", EnvLiveMapDomain)
+	}
+	liveMapDomain = strings.TrimRight(liveMapDomain, "/")
 
 	rf2Servers := os.Getenv(EnvServers)
 	if rf2Servers == "" {
@@ -103,25 +114,29 @@ func main() {
 		log.Fatalf("Error creating settings manager: %s", err.Error())
 	}
 
-	newSessionChannel := make(chan servers.ServerStarted)
-	nm := notification.NewManager(ctx, bot, settings, newSessionChannel)
+	nm := notification.NewManager(ctx, bot, settings)
 	go nm.Start(exitChan)
 
 	// build the main app
-	ss, err := createServers(rf2Servers)
+	ss, err := createServers(rf2Servers, liveMapDomain)
 	if err != nil {
 		log.Fatalf("Error creating servers: %s", err.Error())
 	}
-	sm, err := servers.NewManager(ctx, bot, ss, newSessionChannel)
+	ws := webserver.NewManager()
+	sm, err := servers.NewManager(ctx, bot, ss, ws)
 	if err != nil {
 		log.Fatalf("Error creating servers manager: %s", err.Error())
 	}
-	go sm.Sync(refreshServersTicker, exitChan)
+	// ws.Debug()
 
 	app, err = mainapp.NewMainApp(ctx, bot, domain, ss, exitChan, refreshHotlapsTicker, settings)
 	if err != nil {
 		log.Fatalf("Error creating main app: %s", err.Error())
 	}
+
+	// start syncing once the apps are created
+	go sm.Sync(refreshServersTicker, exitChan)
+	go ws.Serve()
 
 	// Tell the user the bot is online
 	log.Println("Start listening for updates. Press Ctrl-C to stop it")
@@ -140,20 +155,20 @@ func main() {
 
 	cancel()
 
-	if *memprofile != "" {
-		f, err := os.Create(*memprofile)
-		if err != nil {
-			log.Fatal("could not create memory profile: ", err)
-		}
-		defer f.Close() // error handling omitted for example
-		runtime.GC()    // get up-to-date statistics
-		if err := pprof.WriteHeapProfile(f); err != nil {
-			log.Fatal("could not write memory profile: ", err)
-		}
-	}
+	// if *memprofile != "" {
+	// 	f, err := os.Create(*memprofile)
+	// 	if err != nil {
+	// 		log.Fatal("could not create memory profile: ", err)
+	// 	}
+	// 	defer f.Close() // error handling omitted for example
+	// 	runtime.GC()    // get up-to-date statistics
+	// 	if err := pprof.WriteHeapProfile(f); err != nil {
+	// 		log.Fatal("could not write memory profile: ", err)
+	// 	}
+	// }
 }
 
-func createServers(rf2Servers string) ([]servers.Server, error) {
+func createServers(rf2Servers, domain string) ([]servers.Server, error) {
 	serversStr := strings.Split(rf2Servers, ";")
 	ss := []servers.Server{}
 	for _, serverStr := range serversStr {
@@ -161,7 +176,7 @@ func createServers(rf2Servers string) ([]servers.Server, error) {
 		if len(serverData) != 2 {
 			return nil, fmt.Errorf("Invalid server data: %s", serverStr)
 		}
-		server := servers.NewServer(serverData[0], serverData[1])
+		server := servers.NewServer(serverData[0], serverData[1], domain)
 		ss = append(ss, server)
 	}
 	return ss, nil

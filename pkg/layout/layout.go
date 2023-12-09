@@ -1,13 +1,17 @@
 package layout
 
 import (
+	"bytes"
+	"encoding/json"
 	"image/color"
 	"math"
+	"os"
 
 	"image"
 
 	"github.com/llgcode/draw2d"
 	"github.com/llgcode/draw2d/draw2dimg"
+	"github.com/llgcode/draw2d/draw2dsvg"
 )
 
 type Data struct {
@@ -19,7 +23,11 @@ type Data struct {
 
 type AIW []Data
 
-func BuildLayoutPNG(track string, aiw AIW) error {
+const (
+	ScaleSVG = 0.4
+)
+
+func getTrackSize(aiw AIW) (float64, float64, float64, float64, int, bool, image.Rectangle) {
 	maxX := 0.0
 	maxY := 0.0
 	maxZ := 0.0
@@ -54,11 +62,94 @@ func BuildLayoutPNG(track string, aiw AIW) error {
 			minType = data.Type
 		}
 	}
-	// fmt.Println(len(aiw))
-	// fmt.Printf("X: (%f, %f)\n", minX, maxX)
-	// fmt.Printf("Y: (%f, %f)\n", minY, maxY)
-	// fmt.Printf("Z: (%f, %f)\n", minZ, maxZ)
-	return drawImage(track, aiw, math.Abs(minX), maxX, math.Abs(minY), maxY, math.Abs(minZ), maxZ, maxType)
+
+	minX = math.Abs(minX)
+	minZ = math.Abs(minZ)
+	maxX = math.Abs(maxX)
+	maxZ = math.Abs(maxZ)
+
+	// Initialize the graphic context on an RGBA image
+	width := minX + maxX
+	height := minZ + maxZ
+	rotate := false
+	if width < height {
+		rotate = true
+		height = minX + maxX
+		width = minZ + maxZ
+	}
+
+	rect := image.Rect(0, 0, int(width), int(height))
+	return minX, maxX, minZ, maxZ, maxType, rotate, rect
+}
+
+func BuildLayoutPNG(track string, aiw AIW) error {
+	minX, maxX, minZ, maxZ, maxType, rotate, rect := getTrackSize(aiw)
+	width := float64(rect.Max.X)
+	height := float64(rect.Max.Y)
+
+	dest := image.NewRGBA(rect)
+	gc := draw2dimg.NewGraphicContext(dest)
+
+	drawImage(gc, aiw, minX, maxX, minZ, maxZ, maxType, rotate, width, height, rect, 0.1)
+	return draw2dimg.SaveToPngFile(track, dest)
+}
+
+type SvgMetadata struct {
+	MinX   float64         `json:"minX"`
+	MaxX   float64         `json:"maxX"`
+	MinZ   float64         `json:"minZ"`
+	MaxZ   float64         `json:"maxZ"`
+	Rotate bool            `json:"rotate"`
+	Width  float64         `json:"width"`
+	Height float64         `json:"height"`
+	Rect   image.Rectangle `json:"-"`
+}
+
+func BuildLayoutSVG(track string, aiw AIW) error {
+	minX, maxX, minZ, maxZ, _, rotate, rect := getTrackSize(aiw)
+	width := float64(rect.Max.X)
+	height := float64(rect.Max.Y)
+
+	dest := draw2dsvg.NewSvg()
+	gc := draw2dsvg.NewGraphicContext(dest)
+
+	drawImage(gc, aiw, minX, maxX, minZ, maxZ, 1, rotate, width, height, rect, ScaleSVG)
+	err := draw2dsvg.SaveToSvgFile(track, dest)
+	if err != nil {
+		return err
+	}
+
+	metadata := SvgMetadata{
+		MinX:   minX,
+		MaxX:   maxX,
+		MinZ:   minZ,
+		MaxZ:   maxZ,
+		Rotate: rotate,
+		Width:  width,
+		Height: height,
+	}
+
+	jsonBytes, err := json.Marshal(metadata)
+	if err != nil {
+		return err
+	}
+	buffer := new(bytes.Buffer)
+	err = json.Compact(buffer, jsonBytes)
+	if err != nil {
+		return err
+	}
+
+	// append metadata to svg file as comments in the xml
+	f, err := os.OpenFile(track, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, _ = f.Write([]byte("\n<!--\n"))
+	_, _ = f.Write(buffer.Bytes())
+	_, err = f.Write([]byte("\n-->"))
+
+	return err
 }
 
 // Flips the image around the Y axis.
@@ -72,21 +163,7 @@ func invertY(gc draw2d.GraphicContext, rect image.Rectangle, factor float64) {
 	gc.Translate(x, y)
 }
 
-func drawImage(filepath string, aiw AIW, minX, maxX, minY, maxY, minZ, maxZ float64, maxType int) error {
-	// Initialize the graphic context on an RGBA image
-	width := minX + maxX
-	height := minZ + maxZ
-	rotate := false
-	if width < height {
-		// fmt.Println("Rotating")
-		rotate = true
-		height = minX + maxX
-		width = minZ + maxZ
-	}
-
-	dest := image.NewRGBA(image.Rect(0, 0, int(width), int(height)))
-	gc := draw2dimg.NewGraphicContext(dest)
-
+func drawImage(gc draw2d.GraphicContext, aiw AIW, minX, maxX, minZ, maxZ float64, maxType int, rotate bool, width, height float64, rect image.Rectangle, scale float64) {
 	// Draw shapes boxes
 	for i := maxType; i >= 100; i-- {
 		aiwFiltered := AIW{}
@@ -95,7 +172,7 @@ func drawImage(filepath string, aiw AIW, minX, maxX, minY, maxY, minZ, maxZ floa
 				aiwFiltered = append(aiwFiltered, data)
 			}
 		}
-		drawType(gc, aiwFiltered, minX, maxX, minY, maxY, minZ, maxZ, i, rotate, width, height, dest.Rect)
+		drawType(gc, aiwFiltered, minX, maxX, minZ, maxZ, i, rotate, width, height, rect, scale)
 	}
 
 	// Draw pitlane and main track
@@ -106,14 +183,11 @@ func drawImage(filepath string, aiw AIW, minX, maxX, minY, maxY, minZ, maxZ floa
 				aiwFiltered = append(aiwFiltered, data)
 			}
 		}
-		drawType(gc, aiwFiltered, minX, maxX, minY, maxY, minZ, maxZ, i, rotate, width, height, dest.Rect)
+		drawType(gc, aiwFiltered, minX, maxX, minZ, maxZ, i, rotate, width, height, rect, scale)
 	}
-
-	// Save to file
-	return draw2dimg.SaveToPngFile(filepath, dest)
 }
 
-func drawType(gc draw2d.GraphicContext, aiw AIW, minX, maxX, minY, maxY, minZ, maxZ float64, t int, rotate bool, width, height float64, rect image.Rectangle) {
+func drawType(gc draw2d.GraphicContext, aiw AIW, minX, maxX, minZ, maxZ float64, t int, rotate bool, width, height float64, rect image.Rectangle, scale float64) {
 	gc.Save()
 	if t == 0 {
 		gc.SetStrokeColor(color.RGBA{0x00, 0x00, 0x00, 0xff})
@@ -140,7 +214,7 @@ func drawType(gc draw2d.GraphicContext, aiw AIW, minX, maxX, minY, maxY, minZ, m
 	if t == 0 {
 		gc.LineTo(initX, initZ)
 	}
-	invertY(gc, rect, 0.1)
+	invertY(gc, rect, scale)
 
 	if rotate {
 		gc.Rotate(math.Pi / 2)

@@ -8,6 +8,7 @@ import (
 	"log"
 	"math"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -347,6 +348,7 @@ func (s *Server) fromMessageToLiveStandingData(serverName, serverID string, data
 		}
 	}
 
+	slices.Reverse(carsPosition)
 	return model.LiveStandingData{
 		ServerName: serverName,
 		ServerID:   serverID,

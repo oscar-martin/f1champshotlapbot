@@ -11,7 +11,11 @@ import (
 	"image"
 
 	"github.com/llgcode/draw2d"
-	"github.com/llgcode/draw2d/draw2dimg"
+	"github.com/llgcode/draw2d/draw2dsvg"
+)
+
+const (
+	scaleFactor = 0.5
 )
 
 type Data struct {
@@ -95,7 +99,24 @@ func main() {
 	fmt.Printf("X: (%f, %f)\n", minX, maxX)
 	fmt.Printf("Y: (%f, %f)\n", minY, maxY)
 	fmt.Printf("Z: (%f, %f)\n", minZ, maxZ)
-	drawImage(trackAiw, carAiw, math.Abs(minX), maxX, math.Abs(minY), maxY, math.Abs(minZ), maxZ, maxType)
+
+	offsetX := minX
+	fMinX := minX - offsetX
+	fMaxX := maxX - offsetX
+
+	offsetY := minY
+	fMinY := minY - offsetY
+	fMaxY := maxY - offsetY
+
+	offsetZ := minZ
+	fMinZ := minZ - offsetZ
+	fMaxZ := maxZ - offsetZ
+
+	fmt.Printf("Fixed X: (%f, %f, off: %f)\n", fMinX, fMaxX, -offsetX)
+	fmt.Printf("Fixed Y: (%f, %f, off: %f)\n", fMinY, fMaxY, -offsetY)
+	fmt.Printf("Fixed Z: (%f, %f, off: %f)\n", fMinZ, fMaxZ, -offsetZ)
+
+	drawImage(trackAiw, carAiw, fMinX, fMaxX, -offsetX, fMinZ, fMaxZ, -offsetZ, maxType)
 }
 
 // Flips the image around the Y axis.
@@ -109,26 +130,36 @@ func invertY(gc draw2d.GraphicContext, rect image.Rectangle, factor float64) {
 	gc.Translate(x, y)
 }
 
-func drawImage(trackAiw, carAiw AIW, minX, maxX, minY, maxY, minZ, maxZ float64, maxType int) {
+func drawImage(trackAiw, carAiw AIW, minX, maxX, offsetX, minZ, maxZ, offsetZ float64, maxType int) {
 	// Initialize the graphic context on an RGBA image
 	// dest := image.NewRGBA(image.Rect(0, 0, 1297, 1210.0))
 	// dest := image.NewRGBA(image.Rect(0, 0, int(minX+maxX), int(minZ+maxZ)))
 
-	width := minX + maxX
-	height := minZ + maxZ
+	maxX = maxX * (1.0 - scaleFactor)
+	maxZ = maxZ * (1.0 - scaleFactor)
+	minX = minX * (1.0 - scaleFactor)
+	minZ = minZ * (1.0 - scaleFactor)
+	offsetX = offsetX * (1.0 - scaleFactor)
+	offsetZ = offsetZ * (1.0 - scaleFactor)
+	width := maxX
+	height := maxZ
 	rotate := false
 	if width < height {
 		// fmt.Println("Rotating")
 		rotate = true
-		height = minX + maxX
-		width = minZ + maxZ
+		height = maxX
+		width = maxZ
 	}
 	rect := image.Rect(0, 0, int(width), int(height))
 
-	dest := image.NewRGBA(image.Rect(0, 0, int(width), int(height)))
-	gc := draw2dimg.NewGraphicContext(dest)
-	// dest := draw2dsvg.NewSvg()
-	// gc := draw2dsvg.NewGraphicContext(dest)
+	fmt.Printf("Width: %f\nHeight: %f\n", width, height)
+
+	// dest := image.NewRGBA(image.Rect(0, 0, int(width), int(height)))
+	// gc := draw2dimg.NewGraphicContext(dest)
+	dest := draw2dsvg.NewSvg()
+	dest.Width = fmt.Sprintf("%d", int(width))
+	dest.Height = fmt.Sprintf("%d", int(height))
+	gc := draw2dsvg.NewGraphicContext(dest)
 
 	// gc.SetFillColor(image.White)
 	// draw2dkit.RoundedRectangle(gc, 0, 0, width, height, 0, 0)
@@ -146,7 +177,18 @@ func drawImage(trackAiw, carAiw AIW, minX, maxX, minY, maxY, minZ, maxZ float64,
 	// 		}
 	// 	}
 
-	// 	drawType(gc, aiwFiltered, minX, maxX, minY, maxY, minZ, maxZ, i, rotate, width, height, rect)
+	// 	drawType(gc, aiwFiltered, minX, maxX, offsetX, minZ, maxZ, offsetZ, i, rotate, width, height, rect, scaleFactor)
+	// }
+
+	// for i := 99; i >= 3; i-- {
+	// 	aiwFiltered := AIW{}
+	// 	for _, data := range trackAiw {
+	// 		if data.Type == i {
+	// 			aiwFiltered = append(aiwFiltered, data)
+	// 		}
+	// 	}
+
+	// 	drawType(gc, aiwFiltered, minX, maxX, offsetX, minZ, maxZ, offsetZ, i, rotate, width, height, rect, scaleFactor)
 	// }
 
 	for i := 2; i >= 0; i-- {
@@ -157,29 +199,29 @@ func drawImage(trackAiw, carAiw AIW, minX, maxX, minY, maxY, minZ, maxZ float64,
 			}
 		}
 
-		drawType(gc, aiwFiltered, minX, maxX, minY, maxY, minZ, maxZ, i, rotate, width, height, rect)
+		drawType(gc, aiwFiltered, minX, maxX, offsetX, minZ, maxZ, offsetZ, i, rotate, width, height, rect, scaleFactor)
 	}
 
-	// drawType(gc, carAiw, minX, maxX, minY, maxY, minZ, maxZ, -1, rotate, width, height, rect)
+	// drawType(gc, carAiw, minX, maxX, minY, maxY, minZ, maxZ, -1, rotate, width, height, rect, scaleFactor)
 
 	// Save to file
-	draw2dimg.SaveToPngFile("hello.png", dest)
-	// draw2dsvg.SaveToSvgFile("hello.svg", dest)
+	// draw2dimg.SaveToPngFile("hello.png", dest)
+	draw2dsvg.SaveToSvgFile("hello.svg", dest)
 }
 
-func drawType(gc draw2d.GraphicContext, aiw AIW, minX, maxX, minY, maxY, minZ, maxZ float64, t int, rotate bool, width, height float64, rect image.Rectangle) {
+func drawType(gc draw2d.GraphicContext, aiw AIW, minX, maxX, offsetX, minZ, maxZ, offsetZ float64, t int, rotate bool, width, height float64, rect image.Rectangle, factor float64) {
 	gc.Save()
 
 	if t == 0 {
 		gc.SetStrokeColor(image.Black)
-		gc.SetLineWidth(20)
+		gc.SetLineWidth(20 * (1.0 - scaleFactor))
 	} else if t == -1 {
 		gc.SetStrokeColor(image.White)
 		gc.SetLineWidth(3)
 	} else {
 		gc.SetStrokeColor(color.RGBA{0x88, 0x88, 0x88, 0xff})
 		// gc.SetStrokeColor(color.RGBA{0xFF, 0x00, 0x00, 0xff})
-		gc.SetLineWidth(12)
+		gc.SetLineWidth(12 * (1.0 - scaleFactor))
 	}
 	initX, initZ := 0.0, 0.0
 	// size := len(aiw)
@@ -187,8 +229,8 @@ func drawType(gc draw2d.GraphicContext, aiw AIW, minX, maxX, minY, maxY, minZ, m
 		if data.Type != t {
 			continue
 		}
-		x := data.X + minX
-		z := data.Z + minZ
+		x := data.X*(1.0-scaleFactor) + offsetX
+		z := data.Z*(1.0-scaleFactor) + offsetZ
 		if initX == 0.0 && initZ == 0.0 {
 			gc.MoveTo(x, z) // Move to a position to start the new path
 			initX, initZ = x, z
@@ -199,7 +241,7 @@ func drawType(gc draw2d.GraphicContext, aiw AIW, minX, maxX, minY, maxY, minZ, m
 	if t == 0 {
 		gc.LineTo(initX, initZ)
 	}
-	invertY(gc, rect, 0.05)
+	invertY(gc, rect, factor)
 
 	if rotate {
 		gc.Rotate(math.Pi / 2)

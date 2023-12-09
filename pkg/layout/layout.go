@@ -27,21 +27,16 @@ const (
 	ScaleSVG = 0.4
 )
 
-func getTrackSize(aiw AIW) (float64, float64, float64, float64, int, bool, image.Rectangle) {
+func getTrackSize(aiw AIW) (float64, float64, float64, float64, float64, float64, int, bool, image.Rectangle) {
 	maxX := 0.0
-	maxY := 0.0
 	maxZ := 0.0
 	minX := math.Inf(1)
-	minY := math.Inf(1)
 	minZ := math.Inf(1)
 	minType := 10000
 	maxType := 0
 	for _, data := range aiw {
 		if data.X > maxX {
 			maxX = data.X
-		}
-		if data.Y > maxY {
-			maxY = data.Y
 		}
 		if data.Z > maxZ {
 			maxZ = data.Z
@@ -52,9 +47,6 @@ func getTrackSize(aiw AIW) (float64, float64, float64, float64, int, bool, image
 		if data.X < minX {
 			minX = data.X
 		}
-		if data.Y < minY {
-			minY = data.Y
-		}
 		if data.Z < minZ {
 			minZ = data.Z
 		}
@@ -63,70 +55,82 @@ func getTrackSize(aiw AIW) (float64, float64, float64, float64, int, bool, image
 		}
 	}
 
-	minX = math.Abs(minX)
-	minZ = math.Abs(minZ)
-	maxX = math.Abs(maxX)
-	maxZ = math.Abs(maxZ)
+	// minX = math.Abs(minX)
+	// minZ = math.Abs(minZ)
+	// maxX = math.Abs(maxX)
+	// maxZ = math.Abs(maxZ)
+
+	offsetX := minX
+	minX = minX - offsetX
+	maxX = maxX - offsetX
+
+	offsetZ := minZ
+	minZ = minZ - offsetZ
+	maxZ = maxZ - offsetZ
 
 	// Initialize the graphic context on an RGBA image
-	width := minX + maxX
-	height := minZ + maxZ
+	width := maxX
+	height := maxZ
 	rotate := false
 	if width < height {
 		rotate = true
-		height = minX + maxX
-		width = minZ + maxZ
+		height = maxX
+		width = maxZ
 	}
 
 	rect := image.Rect(0, 0, int(width), int(height))
-	return minX, maxX, minZ, maxZ, maxType, rotate, rect
+	return minX, maxX, -offsetX, minZ, maxZ, -offsetZ, maxType, rotate, rect
 }
 
 func BuildLayoutPNG(track string, aiw AIW) error {
-	minX, maxX, minZ, maxZ, maxType, rotate, rect := getTrackSize(aiw)
+	minX, maxX, offsetX, minZ, maxZ, offsetZ, maxType, rotate, rect := getTrackSize(aiw)
 	width := float64(rect.Max.X)
 	height := float64(rect.Max.Y)
 
 	dest := image.NewRGBA(rect)
 	gc := draw2dimg.NewGraphicContext(dest)
 
-	drawImage(gc, aiw, minX, maxX, minZ, maxZ, maxType, rotate, width, height, rect, 0.1)
+	drawImage(gc, aiw, minX, maxX, offsetX, minZ, maxZ, offsetZ, maxType, rotate, width, height, rect, 0.1)
 	return draw2dimg.SaveToPngFile(track, dest)
 }
 
 type SvgMetadata struct {
-	MinX   float64         `json:"minX"`
-	MaxX   float64         `json:"maxX"`
-	MinZ   float64         `json:"minZ"`
-	MaxZ   float64         `json:"maxZ"`
-	Rotate bool            `json:"rotate"`
-	Width  float64         `json:"width"`
-	Height float64         `json:"height"`
-	Rect   image.Rectangle `json:"-"`
+	MinX    float64         `json:"minX"`
+	MaxX    float64         `json:"maxX"`
+	OffsetX float64         `json:"offsetX"`
+	MinZ    float64         `json:"minZ"`
+	MaxZ    float64         `json:"maxZ"`
+	OffsetZ float64         `json:"offsetZ"`
+	Rotate  bool            `json:"rotate"`
+	Width   float64         `json:"width"`
+	Height  float64         `json:"height"`
+	Rect    image.Rectangle `json:"-"`
 }
 
 func BuildLayoutSVG(track string, aiw AIW) error {
-	minX, maxX, minZ, maxZ, _, rotate, rect := getTrackSize(aiw)
+	minX, maxX, offsetX, minZ, maxZ, offsetZ, _, rotate, rect := getTrackSize(aiw)
 	width := float64(rect.Max.X)
 	height := float64(rect.Max.Y)
 
 	dest := draw2dsvg.NewSvg()
 	gc := draw2dsvg.NewGraphicContext(dest)
 
-	drawImage(gc, aiw, minX, maxX, minZ, maxZ, 1, rotate, width, height, rect, ScaleSVG)
+	drawImage(gc, aiw, minX, maxX, offsetX, minZ, maxZ, offsetZ, 1, rotate, width, height, rect, ScaleSVG)
 	err := draw2dsvg.SaveToSvgFile(track, dest)
 	if err != nil {
 		return err
 	}
 
 	metadata := SvgMetadata{
-		MinX:   minX,
-		MaxX:   maxX,
-		MinZ:   minZ,
-		MaxZ:   maxZ,
-		Rotate: rotate,
-		Width:  width,
-		Height: height,
+		MinX:    minX,
+		MaxX:    maxX,
+		OffsetX: offsetX,
+		MinZ:    minZ,
+		MaxZ:    maxZ,
+		OffsetZ: offsetZ,
+		Rotate:  rotate,
+		Width:   width,
+		Height:  height,
 	}
 
 	jsonBytes, err := json.Marshal(metadata)
@@ -163,7 +167,7 @@ func invertY(gc draw2d.GraphicContext, rect image.Rectangle, factor float64) {
 	gc.Translate(x, y)
 }
 
-func drawImage(gc draw2d.GraphicContext, aiw AIW, minX, maxX, minZ, maxZ float64, maxType int, rotate bool, width, height float64, rect image.Rectangle, scale float64) {
+func drawImage(gc draw2d.GraphicContext, aiw AIW, minX, maxX, offsetX, minZ, maxZ, offsetZ float64, maxType int, rotate bool, width, height float64, rect image.Rectangle, scale float64) {
 	// Draw shapes boxes
 	for i := maxType; i >= 100; i-- {
 		aiwFiltered := AIW{}
@@ -172,7 +176,7 @@ func drawImage(gc draw2d.GraphicContext, aiw AIW, minX, maxX, minZ, maxZ float64
 				aiwFiltered = append(aiwFiltered, data)
 			}
 		}
-		drawType(gc, aiwFiltered, minX, maxX, minZ, maxZ, i, rotate, width, height, rect, scale)
+		drawType(gc, aiwFiltered, minX, maxX, offsetX, minZ, maxZ, offsetZ, i, rotate, width, height, rect, scale)
 	}
 
 	// Draw pitlane and main track
@@ -183,11 +187,11 @@ func drawImage(gc draw2d.GraphicContext, aiw AIW, minX, maxX, minZ, maxZ float64
 				aiwFiltered = append(aiwFiltered, data)
 			}
 		}
-		drawType(gc, aiwFiltered, minX, maxX, minZ, maxZ, i, rotate, width, height, rect, scale)
+		drawType(gc, aiwFiltered, minX, maxX, offsetX, minZ, maxZ, offsetZ, i, rotate, width, height, rect, scale)
 	}
 }
 
-func drawType(gc draw2d.GraphicContext, aiw AIW, minX, maxX, minZ, maxZ float64, t int, rotate bool, width, height float64, rect image.Rectangle, scale float64) {
+func drawType(gc draw2d.GraphicContext, aiw AIW, minX, maxX, offsetX, minZ, maxZ, offsetZ float64, t int, rotate bool, width, height float64, rect image.Rectangle, scale float64) {
 	gc.Save()
 	if t == 0 {
 		gc.SetStrokeColor(color.RGBA{0x00, 0x00, 0x00, 0xff})
@@ -202,8 +206,8 @@ func drawType(gc draw2d.GraphicContext, aiw AIW, minX, maxX, minZ, maxZ float64,
 		if data.Type != t {
 			continue
 		}
-		x := data.X + minX
-		z := data.Z + minZ
+		x := data.X + offsetX
+		z := data.Z + offsetZ
 		if initX == 0.0 && initZ == 0.0 {
 			gc.MoveTo(x, z) // Move to a position to start the new path
 			initX, initZ = x, z

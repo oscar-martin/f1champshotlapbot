@@ -220,7 +220,7 @@ func invertY(gc draw2d.GraphicContext, rect image.Rectangle, factor float64) {
 
 func (lm *LiveMap) transformPosition(dataX, dataZ float64, factor float64) Point {
 	lm.gc.Save()
-	lm.gc.MoveTo(dataX+lm.svgMetadata.MinX, dataZ+lm.svgMetadata.MinZ)
+	lm.gc.MoveTo(dataX+lm.svgMetadata.OffsetX, dataZ+lm.svgMetadata.OffsetZ)
 	invertY(lm.gc, lm.svgMetadata.Rect, factor)
 	if lm.svgMetadata.Rotate {
 		lm.gc.Rotate(math.Pi / 2)
@@ -284,17 +284,17 @@ var homeTemplate = template.Must(template.New("").Parse(`
 
 				var carElements = null;
 				if (!cars.has(id)) {
-					if (i > 0) {
-						carElements = buildCar(id, '#EEEEEE', '#393939');
-					} else {
-						// leader
-						carElements = buildCar(id, '#E7E772', '#393939');
-					}
+					carElements = buildCar(id);
 					cars.set(id, carElements);
 				} else {
 					carElements = cars.get(id);
 				}
-				drawCar(carElements, x, y);
+				if (i < driversData.length - 1) {
+					drawCar(carElements, x, y, '#EEEEEE', '#393939');
+				} else {
+					// leader
+					drawCar(carElements, x, y, '#E7E772', '#393939');
+				}
 				i++;
 			}
 
@@ -319,19 +319,17 @@ var homeTemplate = template.Must(template.New("").Parse(`
       console.error('WebSocket connection error:', event);
     });
 
-		function buildCar(id, bColor, fColor) {
+		function buildCar(id) {
 			const carElement = document.createElementNS('http://www.w3.org/2000/svg', 'g');
 			const circleElement = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
 			const textElement = document.createElementNS('http://www.w3.org/2000/svg', 'text');
 
-			textElement.setAttribute('stroke', fColor);
 			textElement.setAttribute('text-anchor', 'middle');
 			textElement.setAttribute('dy', '.3em');
 			textElement.setAttribute('stroke-width', '2px');
 			textElement.setAttribute('font-size', '20px');
 			textElement.textContent = id;
 			circleElement.setAttribute('r', 25); // Radius, adjust as needed
-			circleElement.setAttribute('fill', bColor); // Color, adjust as needed
 			circleElement.setAttribute('stroke', '#111111'); // Color, adjust as needed
 			circleElement.setAttribute('stroke-width', '2px');
 			carElement.appendChild(circleElement);
@@ -343,15 +341,20 @@ var homeTemplate = template.Must(template.New("").Parse(`
 		}
 
     // Function to draw a circle on the SVG
-    function drawCar(carElements, x, y) {
+    function drawCar(carElements, x, y, bColor, fColor) {
 			const circleElement = carElements.circle;
 			const textElement = carElements.text;
 			const carElement = carElements.car;
 
 			textElement.setAttribute('x', x);
 			textElement.setAttribute('y', y);
+			textElement.setAttribute('stroke', fColor);
 			circleElement.setAttribute('cx', x);
       circleElement.setAttribute('cy', y);
+			circleElement.setAttribute('fill', bColor); // Color, adjust as needed
+
+			svgContainer.removeChild(carElement);
+			svgContainer.appendChild(carElement);
     }
 
     // Function to download and display the SVG

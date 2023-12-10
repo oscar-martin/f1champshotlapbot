@@ -24,12 +24,14 @@ type Data struct {
 type AIW []Data
 
 const (
-	ScaleSVG = 0.4
+	ScaleSVG = 0.6
+	ScalePNG = 0.1
+	margin   = 80
 )
 
-func getTrackSize(aiw AIW) (float64, float64, float64, float64, float64, float64, int, bool, image.Rectangle) {
-	maxX := 0.0
-	maxZ := 0.0
+func getTrackSize(aiw AIW, scaleFactor float64) (float64, float64, float64, float64, float64, float64, int, bool, image.Rectangle) {
+	maxX := math.Inf(-1)
+	maxZ := math.Inf(-1)
 	minX := math.Inf(1)
 	minZ := math.Inf(1)
 	minType := 10000
@@ -55,20 +57,23 @@ func getTrackSize(aiw AIW) (float64, float64, float64, float64, float64, float64
 		}
 	}
 
-	// minX = math.Abs(minX)
-	// minZ = math.Abs(minZ)
-	// maxX = math.Abs(maxX)
-	// maxZ = math.Abs(maxZ)
+	offsetX := minX - margin
+	minX = minX - offsetX + (margin / 2)
+	maxX = maxX - offsetX + (margin / 2)
 
-	offsetX := minX
-	minX = minX - offsetX
-	maxX = maxX - offsetX
-
-	offsetZ := minZ
-	minZ = minZ - offsetZ
-	maxZ = maxZ - offsetZ
+	offsetZ := minZ - margin
+	minZ = minZ - offsetZ + (margin / 2)
+	maxZ = maxZ - offsetZ + (margin / 2)
 
 	// Initialize the graphic context on an RGBA image
+
+	maxX = maxX * (1.0 - scaleFactor)
+	maxZ = maxZ * (1.0 - scaleFactor)
+	minX = minX * (1.0 - scaleFactor)
+	minZ = minZ * (1.0 - scaleFactor)
+	offsetX = offsetX * (1.0 - scaleFactor)
+	offsetZ = offsetZ * (1.0 - scaleFactor)
+
 	width := maxX
 	height := maxZ
 	rotate := false
@@ -83,14 +88,14 @@ func getTrackSize(aiw AIW) (float64, float64, float64, float64, float64, float64
 }
 
 func BuildLayoutPNG(track string, aiw AIW) error {
-	minX, maxX, offsetX, minZ, maxZ, offsetZ, maxType, rotate, rect := getTrackSize(aiw)
+	minX, maxX, offsetX, minZ, maxZ, offsetZ, maxType, rotate, rect := getTrackSize(aiw, ScalePNG)
 	width := float64(rect.Max.X)
 	height := float64(rect.Max.Y)
 
 	dest := image.NewRGBA(rect)
 	gc := draw2dimg.NewGraphicContext(dest)
 
-	drawImage(gc, aiw, minX, maxX, offsetX, minZ, maxZ, offsetZ, maxType, rotate, width, height, rect, 0.1)
+	drawImage(gc, aiw, minX, maxX, offsetX, minZ, maxZ, offsetZ, maxType, rotate, width, height, rect, ScalePNG)
 	return draw2dimg.SaveToPngFile(track, dest)
 }
 
@@ -108,7 +113,7 @@ type SvgMetadata struct {
 }
 
 func BuildLayoutSVG(track string, aiw AIW) error {
-	minX, maxX, offsetX, minZ, maxZ, offsetZ, _, rotate, rect := getTrackSize(aiw)
+	minX, maxX, offsetX, minZ, maxZ, offsetZ, _, rotate, rect := getTrackSize(aiw, ScaleSVG)
 	width := float64(rect.Max.X)
 	height := float64(rect.Max.Y)
 
@@ -160,11 +165,7 @@ func BuildLayoutSVG(track string, aiw AIW) error {
 func invertY(gc draw2d.GraphicContext, rect image.Rectangle, factor float64) {
 	height := rect.Max.Y
 	gc.Translate(0, float64(height))
-	gc.Scale(1.0-factor, -1.0+factor)
-
-	x := (float64(rect.Max.X) * factor) / 2
-	y := (float64(rect.Max.Y) * factor) / 2
-	gc.Translate(x, y)
+	gc.Scale(1.0, -1.0)
 }
 
 func drawImage(gc draw2d.GraphicContext, aiw AIW, minX, maxX, offsetX, minZ, maxZ, offsetZ float64, maxType int, rotate bool, width, height float64, rect image.Rectangle, scale float64) {
@@ -195,10 +196,10 @@ func drawType(gc draw2d.GraphicContext, aiw AIW, minX, maxX, offsetX, minZ, maxZ
 	gc.Save()
 	if t == 0 {
 		gc.SetStrokeColor(color.RGBA{0x00, 0x00, 0x00, 0xff})
-		gc.SetLineWidth(20)
+		gc.SetLineWidth(20 * scale)
 	} else {
 		gc.SetStrokeColor(color.RGBA{0x88, 0x88, 0x88, 0xff})
-		gc.SetLineWidth(12)
+		gc.SetLineWidth(12 * scale)
 	}
 	initX, initZ := 0.0, 0.0
 
@@ -206,8 +207,8 @@ func drawType(gc draw2d.GraphicContext, aiw AIW, minX, maxX, offsetX, minZ, maxZ
 		if data.Type != t {
 			continue
 		}
-		x := data.X + offsetX
-		z := data.Z + offsetZ
+		x := data.X*(1.0-scale) + offsetX
+		z := data.Z*(1.0-scale) + offsetZ
 		if initX == 0.0 && initZ == 0.0 {
 			gc.MoveTo(x, z) // Move to a position to start the new path
 			initX, initZ = x, z

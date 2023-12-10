@@ -11,11 +11,13 @@ import (
 	"image"
 
 	"github.com/llgcode/draw2d"
+	"github.com/llgcode/draw2d/draw2dkit"
 	"github.com/llgcode/draw2d/draw2dsvg"
 )
 
 const (
 	scaleFactor = 0.5
+	margin      = 60
 )
 
 type Data struct {
@@ -61,9 +63,9 @@ func main() {
 		}
 	}
 
-	maxX := 0.0
-	maxY := 0.0
-	maxZ := 0.0
+	maxX := math.Inf(-1)
+	maxY := math.Inf(-1)
+	maxZ := math.Inf(-1)
 	minX := math.Inf(1)
 	minY := math.Inf(1)
 	minZ := math.Inf(1)
@@ -100,34 +102,18 @@ func main() {
 	fmt.Printf("Y: (%f, %f)\n", minY, maxY)
 	fmt.Printf("Z: (%f, %f)\n", minZ, maxZ)
 
-	offsetX := minX
-	fMinX := minX - offsetX
-	fMaxX := maxX - offsetX
+	offsetX := minX - margin
+	fMinX := minX - offsetX + (margin / 2)
+	fMaxX := maxX - offsetX + (margin / 2)
 
-	offsetY := minY
-	fMinY := minY - offsetY
-	fMaxY := maxY - offsetY
-
-	offsetZ := minZ
-	fMinZ := minZ - offsetZ
-	fMaxZ := maxZ - offsetZ
+	offsetZ := minZ - margin
+	fMinZ := minZ - offsetZ + (margin / 2)
+	fMaxZ := maxZ - offsetZ + (margin / 2)
 
 	fmt.Printf("Fixed X: (%f, %f, off: %f)\n", fMinX, fMaxX, -offsetX)
-	fmt.Printf("Fixed Y: (%f, %f, off: %f)\n", fMinY, fMaxY, -offsetY)
 	fmt.Printf("Fixed Z: (%f, %f, off: %f)\n", fMinZ, fMaxZ, -offsetZ)
 
 	drawImage(trackAiw, carAiw, fMinX, fMaxX, -offsetX, fMinZ, fMaxZ, -offsetZ, maxType)
-}
-
-// Flips the image around the Y axis.
-func invertY(gc draw2d.GraphicContext, rect image.Rectangle, factor float64) {
-	height := rect.Max.Y
-	gc.Translate(0, float64(height))
-	gc.Scale(1.0-factor, -1.0+factor)
-
-	x := (float64(rect.Max.X) * factor) / 2
-	y := (float64(rect.Max.Y) * factor) / 2
-	gc.Translate(x, y)
 }
 
 func drawImage(trackAiw, carAiw AIW, minX, maxX, offsetX, minZ, maxZ, offsetZ float64, maxType int) {
@@ -150,6 +136,10 @@ func drawImage(trackAiw, carAiw AIW, minX, maxX, offsetX, minZ, maxZ, offsetZ fl
 		height = maxX
 		width = maxZ
 	}
+
+	// height = height
+	// width = width
+
 	rect := image.Rect(0, 0, int(width), int(height))
 
 	fmt.Printf("Width: %f\nHeight: %f\n", width, height)
@@ -191,14 +181,14 @@ func drawImage(trackAiw, carAiw AIW, minX, maxX, offsetX, minZ, maxZ, offsetZ fl
 	// 	drawType(gc, aiwFiltered, minX, maxX, offsetX, minZ, maxZ, offsetZ, i, rotate, width, height, rect, scaleFactor)
 	// }
 
-	for i := 2; i >= 0; i-- {
+	// for i := 160; i >= 0; i-- {
+	for i := 0; i <= 0; i++ {
 		aiwFiltered := AIW{}
 		for _, data := range trackAiw {
 			if data.Type == i {
 				aiwFiltered = append(aiwFiltered, data)
 			}
 		}
-
 		drawType(gc, aiwFiltered, minX, maxX, offsetX, minZ, maxZ, offsetZ, i, rotate, width, height, rect, scaleFactor)
 	}
 
@@ -218,29 +208,53 @@ func drawType(gc draw2d.GraphicContext, aiw AIW, minX, maxX, offsetX, minZ, maxZ
 	} else if t == -1 {
 		gc.SetStrokeColor(image.White)
 		gc.SetLineWidth(3)
-	} else {
+	} else if t < 2 {
 		gc.SetStrokeColor(color.RGBA{0x88, 0x88, 0x88, 0xff})
-		// gc.SetStrokeColor(color.RGBA{0xFF, 0x00, 0x00, 0xff})
 		gc.SetLineWidth(12 * (1.0 - scaleFactor))
+	} else {
+		gc.SetStrokeColor(color.RGBA{0xFF, 0x00, 0x00, 0xff})
+		gc.SetLineWidth(2 * (1.0 - scaleFactor))
 	}
 	initX, initZ := 0.0, 0.0
 	// size := len(aiw)
-	for _, data := range aiw {
-		if data.Type != t {
+	if t != 2 && t != 3 {
+		for _, data := range aiw {
+			if data.Type != t {
+				continue
+			}
+			x := data.X*(1.0-scaleFactor) + offsetX
+			z := data.Z*(1.0-scaleFactor) + offsetZ
+			if initX == 0.0 && initZ == 0.0 {
+				gc.MoveTo(x, z) // Move to a position to start the new path
+				initX, initZ = x, z
+			} else {
+				gc.LineTo(x, z)
+			}
+		}
+	} else {
+		var finishLine1, finishLine2 Data
+		for _, data := range aiw {
+			if data.Type != t && data.Type != t+1 {
+				continue
+			}
+			x := data.X*(1.0-scaleFactor) + offsetX
+			z := data.Z*(1.0-scaleFactor) + offsetZ
+			var finishLine Data
+			finishLine.X = x
+			finishLine.Z = z
+			if data.Type == t {
+				finishLine1 = finishLine
+			} else {
+				finishLine2 = finishLine
+				break
+			}
 			continue
 		}
-		x := data.X*(1.0-scaleFactor) + offsetX
-		z := data.Z*(1.0-scaleFactor) + offsetZ
-		if initX == 0.0 && initZ == 0.0 {
-			gc.MoveTo(x, z) // Move to a position to start the new path
-			initX, initZ = x, z
-		} else {
-			gc.LineTo(x, z)
-		}
+		draw2dkit.Rectangle(gc, finishLine1.X, finishLine1.Z, finishLine2.X, finishLine2.Z)
 	}
-	if t == 0 {
-		gc.LineTo(initX, initZ)
-	}
+	// if t == 0 {
+	// 	gc.LineTo(initX, initZ)
+	// }
 	invertY(gc, rect, factor)
 
 	if rotate {
@@ -257,4 +271,18 @@ func drawType(gc draw2d.GraphicContext, aiw AIW, minX, maxX, offsetX, minZ, maxZ
 
 	gc.Stroke()
 	gc.Restore()
+}
+
+// Flips the image around the Y axis.
+func invertY(gc draw2d.GraphicContext, rect image.Rectangle, factor float64) {
+	height := rect.Max.Y
+	gc.Translate(0, float64(height))
+	// gc.Scale(1.0-factor, -1.0+factor)
+	gc.Scale(1.0, -1.0)
+
+	// x := (float64(rect.Max.X) * (1.0 - factor)) / 16
+	// y := (float64(rect.Max.Y) * (1.0 - factor)) / 16
+	// x := (float64(rect.Max.X) * factor) / 2
+	// y := (float64(rect.Max.Y) * factor) / 2
+	// gc.Translate(x, y)
 }

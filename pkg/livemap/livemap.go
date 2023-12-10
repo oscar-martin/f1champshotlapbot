@@ -211,16 +211,12 @@ func (lm *LiveMap) addHandlers(r *mux.Router, serverId string) {
 func invertY(gc draw2d.GraphicContext, rect image.Rectangle, factor float64) {
 	height := rect.Max.Y
 	gc.Translate(0, float64(height))
-	gc.Scale(1.0-factor, -1.0+factor)
-
-	x := (float64(rect.Max.X) * factor) / 2
-	y := (float64(rect.Max.Y) * factor) / 2
-	gc.Translate(x, y)
+	gc.Scale(1.0, -1.0)
 }
 
 func (lm *LiveMap) transformPosition(dataX, dataZ float64, factor float64) Point {
 	lm.gc.Save()
-	lm.gc.MoveTo(dataX+lm.svgMetadata.OffsetX, dataZ+lm.svgMetadata.OffsetZ)
+	lm.gc.MoveTo(dataX*(1.0-factor)+lm.svgMetadata.OffsetX, dataZ*(1.0-factor)+lm.svgMetadata.OffsetZ)
 	invertY(lm.gc, lm.svgMetadata.Rect, factor)
 	if lm.svgMetadata.Rotate {
 		lm.gc.Rotate(math.Pi / 2)

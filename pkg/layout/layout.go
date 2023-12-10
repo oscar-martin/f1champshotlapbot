@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"math"
 	"os"
+	"sync"
 
 	"image"
 
@@ -24,9 +25,13 @@ type Data struct {
 type AIW []Data
 
 const (
-	ScaleSVG = 0.6
+	ScaleSVG = 0.75
 	ScalePNG = 0.1
-	margin   = 80
+	margin   = 240
+)
+
+var (
+	mu = sync.Mutex{}
 )
 
 func getTrackSize(aiw AIW, scaleFactor float64) (float64, float64, float64, float64, float64, float64, int, bool, image.Rectangle) {
@@ -88,6 +93,8 @@ func getTrackSize(aiw AIW, scaleFactor float64) (float64, float64, float64, floa
 }
 
 func BuildLayoutPNG(track string, aiw AIW) error {
+	mu.Lock()
+	defer mu.Unlock()
 	minX, maxX, offsetX, minZ, maxZ, offsetZ, maxType, rotate, rect := getTrackSize(aiw, ScalePNG)
 	width := float64(rect.Max.X)
 	height := float64(rect.Max.Y)
@@ -95,7 +102,7 @@ func BuildLayoutPNG(track string, aiw AIW) error {
 	dest := image.NewRGBA(rect)
 	gc := draw2dimg.NewGraphicContext(dest)
 
-	drawImage(gc, aiw, minX, maxX, offsetX, minZ, maxZ, offsetZ, maxType, rotate, width, height, rect, ScalePNG)
+	drawImage(gc, aiw, minX, maxX, offsetX, minZ, maxZ, offsetZ, maxType, rotate, width, height, rect, ScalePNG, false)
 	return draw2dimg.SaveToPngFile(track, dest)
 }
 
@@ -113,6 +120,8 @@ type SvgMetadata struct {
 }
 
 func BuildLayoutSVG(track string, aiw AIW) error {
+	mu.Lock()
+	defer mu.Unlock()
 	minX, maxX, offsetX, minZ, maxZ, offsetZ, _, rotate, rect := getTrackSize(aiw, ScaleSVG)
 	width := float64(rect.Max.X)
 	height := float64(rect.Max.Y)
@@ -120,7 +129,7 @@ func BuildLayoutSVG(track string, aiw AIW) error {
 	dest := draw2dsvg.NewSvg()
 	gc := draw2dsvg.NewGraphicContext(dest)
 
-	drawImage(gc, aiw, minX, maxX, offsetX, minZ, maxZ, offsetZ, 1, rotate, width, height, rect, ScaleSVG)
+	drawImage(gc, aiw, minX, maxX, offsetX, minZ, maxZ, offsetZ, 1, rotate, width, height, rect, ScaleSVG, true)
 	err := draw2dsvg.SaveToSvgFile(track, dest)
 	if err != nil {
 		return err
@@ -168,7 +177,7 @@ func invertY(gc draw2d.GraphicContext, rect image.Rectangle, factor float64) {
 	gc.Scale(1.0, -1.0)
 }
 
-func drawImage(gc draw2d.GraphicContext, aiw AIW, minX, maxX, offsetX, minZ, maxZ, offsetZ float64, maxType int, rotate bool, width, height float64, rect image.Rectangle, scale float64) {
+func drawImage(gc draw2d.GraphicContext, aiw AIW, minX, maxX, offsetX, minZ, maxZ, offsetZ float64, maxType int, rotate bool, width, height float64, rect image.Rectangle, scale float64, applyStrokeScale bool) {
 	// Draw shapes boxes
 	for i := maxType; i >= 100; i-- {
 		aiwFiltered := AIW{}
@@ -177,7 +186,7 @@ func drawImage(gc draw2d.GraphicContext, aiw AIW, minX, maxX, offsetX, minZ, max
 				aiwFiltered = append(aiwFiltered, data)
 			}
 		}
-		drawType(gc, aiwFiltered, minX, maxX, offsetX, minZ, maxZ, offsetZ, i, rotate, width, height, rect, scale)
+		drawType(gc, aiwFiltered, minX, maxX, offsetX, minZ, maxZ, offsetZ, i, rotate, width, height, rect, scale, applyStrokeScale)
 	}
 
 	// Draw pitlane and main track
@@ -188,18 +197,22 @@ func drawImage(gc draw2d.GraphicContext, aiw AIW, minX, maxX, offsetX, minZ, max
 				aiwFiltered = append(aiwFiltered, data)
 			}
 		}
-		drawType(gc, aiwFiltered, minX, maxX, offsetX, minZ, maxZ, offsetZ, i, rotate, width, height, rect, scale)
+		drawType(gc, aiwFiltered, minX, maxX, offsetX, minZ, maxZ, offsetZ, i, rotate, width, height, rect, scale, applyStrokeScale)
 	}
 }
 
-func drawType(gc draw2d.GraphicContext, aiw AIW, minX, maxX, offsetX, minZ, maxZ, offsetZ float64, t int, rotate bool, width, height float64, rect image.Rectangle, scale float64) {
+func drawType(gc draw2d.GraphicContext, aiw AIW, minX, maxX, offsetX, minZ, maxZ, offsetZ float64, t int, rotate bool, width, height float64, rect image.Rectangle, scale float64, applyStrokeScale bool) {
 	gc.Save()
+	strokeScale := 1.0
+	if applyStrokeScale && scale > 0.0 {
+		strokeScale = scale
+	}
 	if t == 0 {
 		gc.SetStrokeColor(color.RGBA{0x00, 0x00, 0x00, 0xff})
-		gc.SetLineWidth(20 * scale)
+		gc.SetLineWidth(20 * strokeScale)
 	} else {
 		gc.SetStrokeColor(color.RGBA{0x88, 0x88, 0x88, 0xff})
-		gc.SetLineWidth(12 * scale)
+		gc.SetLineWidth(12 * strokeScale)
 	}
 	initX, initZ := 0.0, 0.0
 

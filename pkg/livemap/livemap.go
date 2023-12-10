@@ -69,23 +69,29 @@ func (lm *LiveMap) GetPath() string {
 
 func (lm *LiveMap) updateCarsPosition() {
 	for carsPosition := range lm.carsPositionChan {
+		lm.mu.Lock()
 		if !lm.sessionRunning {
+			lm.mu.Unlock()
 			continue
 		}
 		transformedCarsPosition := make([]model.CarPosition, len(carsPosition))
 		for i, carPosition := range carsPosition {
-			transformedCarsPosition[i] = carPosition
-			p := lm.transformPosition(carPosition.X, carPosition.Z, layout.ScaleSVG)
-			transformedCarsPosition[i].X = p.X
-			transformedCarsPosition[i].Z = p.Z
+			if lm.gc != nil {
+				transformedCarsPosition[i] = carPosition
+				p := lm.transformPosition(carPosition.X, carPosition.Z, layout.ScaleSVG)
+				transformedCarsPosition[i].X = p.X
+				transformedCarsPosition[i].Z = p.Z
+			}
 		}
-		lm.mu.Lock()
 		lm.carsPosition = transformedCarsPosition
 		lm.mu.Unlock()
 	}
 }
 
 func (lm *LiveMap) StartSession(ssd model.SelectedSessionData, svgTrackResource resources.Resource) {
+	lm.mu.Lock()
+	defer lm.mu.Unlock()
+
 	lm.selectedSessionData = ssd
 	lm.svgTrackResource = svgTrackResource
 	svgPath := lm.svgTrackResource.FilePath()
@@ -134,6 +140,8 @@ func (lm *LiveMap) StartSession(ssd model.SelectedSessionData, svgTrackResource 
 }
 
 func (lm *LiveMap) StopSession() {
+	lm.mu.Lock()
+	defer lm.mu.Unlock()
 	lm.sessionRunning = false
 }
 
@@ -181,6 +189,7 @@ type Data struct {
 	TrackURL     string
 	Width        int
 	Height       int
+	Scale        float64
 }
 
 func (lm *LiveMap) livemapHandler(serverId string) func(w http.ResponseWriter, r *http.Request) {
@@ -197,6 +206,7 @@ func (lm *LiveMap) livemapHandler(serverId string) func(w http.ResponseWriter, r
 			TrackURL:     "http://" + r.Host + "/resources/" + lm.svgTrackResource.FileName(),
 			Width:        int(lm.svgMetadata.Width),
 			Height:       int(lm.svgMetadata.Height),
+			Scale:        (1.0 - layout.ScaleSVG),
 		}
 		homeTemplate.Execute(w, e)
 	}
@@ -347,10 +357,7 @@ var homeTemplate = template.Must(template.New("").Parse(`
 			textElement.setAttribute('stroke', fColor);
 			circleElement.setAttribute('cx', x);
       circleElement.setAttribute('cy', y);
-			circleElement.setAttribute('fill', bColor); // Color, adjust as needed
-
-			svgContainer.removeChild(carElement);
-			svgContainer.appendChild(carElement);
+			circleElement.setAttribute('fill', bColor);
     }
 
     // Function to download and display the SVG

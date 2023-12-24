@@ -28,8 +28,3 @@ To build it for linux:
   ```bash
   CC=x86_64-linux-musl-gcc CXX=x86_64-linux-musl-g++ GOARCH=amd64 GOOS=linux CGO_ENABLED=1 go build -ldflags "-linkmode external -extldflags -static" -o f1champshotlapbot-linux .
   ```
-
-## TODO
-
-- Export session data once the session is over and create a naming convention for the folders/files.
-- Add bot app to browser over the historical data (previous point).

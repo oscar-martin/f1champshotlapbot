@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 const (
@@ -130,7 +130,7 @@ type Manager struct {
 }
 
 func NewManager() (*Manager, error) {
-	db, err := sql.Open("sqlite3", DbName)
+	db, err := sql.Open("sqlite", DbName)
 	if err != nil {
 		log.Printf("error opening database: %s\n", err)
 		return nil, err

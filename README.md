@@ -24,7 +24,7 @@ start - Give a welcome message
 menu - Show the bot menu
 ```
 
-Go to the [releases](https://github.com/oscar-martin/f1champshotlapsbot/releases) and download the binary for your platform.
+Go to the [releases](https://github.com/oscar-martin/f1champshotlapbot/releases) and download the binary for your platform.
 
 Certain environment variable must be set:
 

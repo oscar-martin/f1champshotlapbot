@@ -4,13 +4,16 @@ import (
 	"context"
 	"f1champshotlapsbot/pkg/apps"
 	"f1champshotlapsbot/pkg/apps/hotlaps"
-	"f1champshotlapsbot/pkg/apps/live"
 	"f1champshotlapsbot/pkg/apps/sessions"
-	"f1champshotlapsbot/pkg/menus"
-	"f1champshotlapsbot/pkg/servers"
-	"f1champshotlapsbot/pkg/settings"
 	"fmt"
 	"time"
+
+	"github.com/nicksnyder/go-i18n/v2/i18n"
+	"github.com/oscar-martin/rfactor2telegrambot/pkg/apps/live"
+
+	"github.com/oscar-martin/rfactor2telegrambot/pkg/menus"
+	"github.com/oscar-martin/rfactor2telegrambot/pkg/servers"
+	"github.com/oscar-martin/rfactor2telegrambot/pkg/settings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -45,15 +48,15 @@ type MainApp struct {
 	accepters []apps.Accepter
 }
 
-func NewMainApp(ctx context.Context, bot *tgbotapi.BotAPI, domain string, ss []servers.Server, exitChan chan bool, refreshHotlapsTicker *time.Ticker, sm *settings.Manager) (*MainApp, error) {
-	hotlapsAppMenu := menus.NewApplicationMenu(buttonHotlaps, appName, menuer{})
+func NewMainApp(ctx context.Context, bot *tgbotapi.BotAPI, domain string, ss []servers.Server, exitChan chan bool, refreshHotlapsTicker *time.Ticker, sm *settings.Manager, loc *i18n.Localizer) (*MainApp, error) {
+	hotlapsAppMenu := menus.NewApplicationMenu(buttonHotlaps, appName, menuer{}, loc)
 	hotlapApp := hotlaps.NewHotlapsApp(ctx, bot, domain, hotlapsAppMenu, exitChan, refreshHotlapsTicker)
 
-	sessionsAppMenu := menus.NewApplicationMenu(buttonSessions, appName, menuer{})
+	sessionsAppMenu := menus.NewApplicationMenu(buttonSessions, appName, menuer{}, loc)
 	sessionsApp := sessions.NewSessionsApp(ctx, bot, domain, sessionsAppMenu)
 
-	liveAppMenu := menus.NewApplicationMenu(buttonLive, appName, menuer{})
-	liveApp, err := live.NewLiveApp(ctx, bot, ss, liveAppMenu, sm)
+	liveAppMenu := menus.NewApplicationMenu(buttonLive, appName, menuer{}, loc)
+	liveApp, err := live.NewLiveApp(ctx, bot, ss, liveAppMenu, sm, loc)
 	if err != nil {
 		return nil, err
 	}

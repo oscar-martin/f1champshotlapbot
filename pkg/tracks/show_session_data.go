@@ -2,9 +2,10 @@ package tracks
 
 import (
 	"bytes"
-	"f1champshotlapsbot/pkg/helper"
 	"fmt"
 	"strings"
+
+	"github.com/oscar-martin/rfactor2telegrambot/pkg/helper"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/jedib0t/go-pretty/v6/table"

@@ -2,8 +2,9 @@ package sessions
 
 import (
 	"context"
-	"f1champshotlapsbot/pkg/menus"
 	"fmt"
+
+	"github.com/oscar-martin/rfactor2telegrambot/pkg/menus"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )

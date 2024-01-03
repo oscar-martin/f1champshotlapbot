@@ -3,13 +3,14 @@ package tracks
 import (
 	"context"
 	"encoding/json"
-	"f1champshotlapsbot/pkg/helper"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/oscar-martin/rfactor2telegrambot/pkg/helper"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )

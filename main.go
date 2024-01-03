@@ -2,13 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"f1champshotlapsbot/pkg/apps"
-	"f1champshotlapsbot/pkg/apps/live"
 	"f1champshotlapsbot/pkg/apps/mainapp"
-	"f1champshotlapsbot/pkg/notification"
-	"f1champshotlapsbot/pkg/servers"
-	"f1champshotlapsbot/pkg/settings"
-	"f1champshotlapsbot/pkg/webserver"
 	"flag"
 	"fmt"
 	"log"
@@ -17,6 +13,14 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/nicksnyder/go-i18n/v2/i18n"
+	"github.com/oscar-martin/rfactor2telegrambot/pkg/apps/live"
+	"github.com/oscar-martin/rfactor2telegrambot/pkg/notification"
+	"github.com/oscar-martin/rfactor2telegrambot/pkg/servers"
+	"github.com/oscar-martin/rfactor2telegrambot/pkg/settings"
+	"github.com/oscar-martin/rfactor2telegrambot/pkg/webserver"
+	"golang.org/x/text/language"
 
 	_ "net/http/pprof"
 
@@ -28,8 +32,9 @@ const (
 	EnvHotlapsDomain = "API_DOMAIN"
 	// format: <server_id>,<server_url>;<server_id>,<server_url>;...
 	// format example: "ServerID1,http://localhost:10001;ServerID2,http://localhost:10002;ServerID3,http://localhost:10003"
-	EnvServers       = "RF2_SERVERS"
-	EnvLiveMapDomain = "LIVEMAP_DOMAIN"
+	EnvServers          = "RF2_SERVERS"
+	EnvLiveMapDomain    = "LIVEMAP_DOMAIN"
+	EnvWebServerAddress = "WEBSERVER_ADDRESS"
 )
 
 var (
@@ -83,6 +88,11 @@ func main() {
 		log.Fatalf("%s is not set", EnvServers)
 	}
 
+	var webServerAddr = ":8080"
+	if os.Getenv(EnvWebServerAddress) != "" {
+		webServerAddr = os.Getenv(EnvWebServerAddress)
+	}
+
 	bot, err = tgbotapi.NewBotAPI(token)
 	if err != nil {
 		// Abort if something is wrong
@@ -105,6 +115,11 @@ func main() {
 	// Pass cancellable context to goroutine
 	go receiveUpdates(ctx, updates)
 
+	bundle := i18n.NewBundle(language.English)
+	bundle.RegisterUnmarshalFunc("json", json.Unmarshal)
+	bundle.MustLoadMessageFile("active.es.json")
+	loc := i18n.NewLocalizer(bundle, "es")
+
 	exitChan := make(chan bool)
 	refreshHotlapsTicker := time.NewTicker(60 * time.Minute)
 	refreshServersTicker := time.NewTicker(10 * time.Second)
@@ -114,7 +129,7 @@ func main() {
 		log.Fatalf("Error creating settings manager: %s", err.Error())
 	}
 
-	nm := notification.NewManager(ctx, bot, settings)
+	nm := notification.NewManager(ctx, bot, settings, loc)
 	go nm.Start(exitChan)
 
 	// build the main app
@@ -123,20 +138,20 @@ func main() {
 		log.Fatalf("Error creating servers: %s", err.Error())
 	}
 	ws := webserver.NewManager()
-	sm, err := servers.NewManager(ctx, bot, ss, ws)
+	sm, err := servers.NewManager(ctx, bot, ss, ws, loc)
 	if err != nil {
 		log.Fatalf("Error creating servers manager: %s", err.Error())
 	}
 	// ws.Debug()
 
-	app, err = mainapp.NewMainApp(ctx, bot, domain, ss, exitChan, refreshHotlapsTicker, settings)
+	app, err = mainapp.NewMainApp(ctx, bot, domain, ss, exitChan, refreshHotlapsTicker, settings, loc)
 	if err != nil {
 		log.Fatalf("Error creating main app: %s", err.Error())
 	}
 
 	// start syncing once the apps are created
 	go sm.Sync(refreshServersTicker, exitChan)
-	go ws.Serve()
+	go ws.Serve(webServerAddr)
 
 	// Tell the user the bot is online
 	log.Println("Start listening for updates. Press Ctrl-C to stop it")
